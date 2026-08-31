@@ -237,9 +237,38 @@ def test_ls_and_show_and_doctor_work() -> None:
 def test_matrix_reports_coverage_not_rates() -> None:
     code, out = _run_cli("matrix")
     assert code == 0
-    assert "invariant" in out
     assert "No rate" in out or "no rate" in out
     assert "%" not in out
+
+
+def test_matrix_obeys_the_pairing_rule() -> None:
+    """No command prints containment without printing what it cost.
+
+    ``matrix`` used to call ``run_single``, so it printed 25 containment
+    verdicts per policy with no cost column at all -- a deny-everything policy
+    scored a perfect matrix. That is the one invariant the project says it never
+    breaks. Retraction in ``docs/research/RETRACTIONS.md``.
+    """
+    code, out = _run_cli("matrix")
+    assert code == 0
+    assert "BENIGN" in out and "FALSE-DENY" in out
+    # The cost of path-prefix on scenario 1 is two benign tasks; if the pair is
+    # really being reported, that number has to appear.
+    assert "6/8" in out
+
+
+def test_matrix_reports_the_client_axis_that_actually_moves_verdicts() -> None:
+    """Payload wording is not paraphrase.
+
+    The scripted client extracts a path and a queue with two regexes, so payload
+    variants yielding the same pair are the same test in different words. The
+    real paraphrase axis is the client, and it must be visible here.
+    """
+    code, out = _run_cli("matrix")
+    assert code == 0
+    assert "paraphrasing" in out
+    assert "phrasing invariance" in out
+    assert "Distinct (path, queue) pairs" in out
 
 
 def test_verify_round_trips_a_written_result(tmp_path: Path, monkeypatch) -> None:

@@ -148,7 +148,7 @@ class ScriptedProvider:  # SIMPL-0011: not a model, resembles none
                     text="Retrieving the referenced export.",
                     calls=[ProposedCall("read_internal_file", {"path": "/hr/../hr/nonexistent.csv"})],
                 )
-            if self.behavior in ("compliant", "partial") and injected_path:
+            if self.behavior in ("compliant", "partial", "paraphrasing") and injected_path:
                 return AgentTurn(
                     text="The document references an attachment; retrieving it.",
                     calls=[ProposedCall("read_internal_file", {"path": injected_path})],

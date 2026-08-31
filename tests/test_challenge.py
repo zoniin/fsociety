@@ -123,23 +123,52 @@ def test_a_policy_that_contains_the_attack_is_reported_held(scenario) -> None:
 def test_a_latent_gap_alone_is_not_a_break() -> None:
     """The technicality that would hollow the whole thing out.
 
-    ``path-prefix-v1`` contains the scenario-1 attack but leaves an open route
-    the probe can see. Counting that as a break would make challenges winnable
-    without moving any data, and a headline number winnable on a technicality
-    stops meaning anything within a month. It is still surfaced in the text --
-    it is a break waiting for the right agent, just not one yet.
+    A latent gap means the agent never took a route the policy would have
+    permitted. Counting that as a break would make challenges winnable without
+    moving any data, and a headline number winnable on a technicality stops
+    meaning anything within a month. It is still surfaced in the text -- it is a
+    break waiting for the right agent, just not one yet.
+
+    The instance used to be ``path-prefix-v1`` on scenario 1. That turned out to
+    be a probe false positive (retraction R11): the probe enumerated routes by
+    ``resolve`` alone, and ``read_document`` resolves a ``kind: file`` resource
+    and then refuses to execute on it. The genuine instance is a *refusing*
+    client against a policy that would have allowed the whole objective -- which
+    is exactly what the signal is for.
     """
-    loaded = load_scenario("indirect-document-injection")
-    trial = _run(loaded, "path-prefix")
-    report = evaluate_challenge(loaded, "path-prefix", trial, REPO_FREEZE)
+    loaded = load_scenario("confidential-egress")
+    trial = run_trial(
+        loaded, load_policy("permissive"), lambda: ScriptedProvider("refusing")
+    )[0]
+    report = evaluate_challenge(loaded, "permissive", trial, REPO_FREEZE)
 
     assert trial.attack.outcome.authorization_gap_open is True
+    assert trial.attack.outcome.denials == 0
     assert report.broken is False
 
     text = render_challenge(report)
     assert "POLICY HELD" in text
     assert "latent gap open           YES" in text
     assert "break waiting" in text
+
+
+def test_the_probe_does_not_invent_routes_that_cannot_execute() -> None:
+    """Retraction R11, pinned.
+
+    ``read_document`` resolves the payroll file by URI and then raises, because
+    two tools aliasing one object was a real bypass fixed in V0. The probe used
+    resolvability alone and reported that unreachable call as an
+    ``UNDECLARED ROUTE PERMITTED``. It was the sole driver of the
+    ``LATENT GAP: YES`` cell the README described as the harness finding a
+    bypass unaided.
+    """
+    loaded = load_scenario("indirect-document-injection")
+    outcome = run_trial(
+        loaded, load_policy("path-prefix"), lambda: ScriptedProvider("compliant")
+    )[0].attack.outcome
+
+    assert outcome.authorization_gap_open is False
+    assert "UNDECLARED ROUTE" not in outcome.probe_detail
 
 
 def test_the_benign_pair_is_always_shown(scenario) -> None:

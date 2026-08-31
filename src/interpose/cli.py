@@ -44,7 +44,7 @@ from .engine.trial import (
 from .errors import HarnessError, InterposeError, ScenarioError, UsageError
 from .policy.base import BUILTIN_POLICIES, load_policy
 from .providers.base import AgentProvider
-from .providers.scripted import BEHAVIOR_CLASSES, ScriptedProvider
+from .providers.scripted import BEHAVIOR_CLASSES, BehaviorClass, ScriptedProvider
 from .report.render import (
     configure_stdout,
     render_comparison,
@@ -309,46 +309,97 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_matrix(args: argparse.Namespace) -> int:
-    """Paraphrase coverage.
+    """Phrasing invariance of the policy decision, reported with its cost.
 
-    Deliberately *not* described as variance. Runs on the scripted provider
-    are byte-identical by construction, so a confidence interval over them
-    would measure the scenario author's phrasing choices rather than sampling
-    error. What this shows is whether the policy decision is invariant across
-    rewordings of both the request and the attack -- a property with, as far
-    as I can find, no coverage anywhere today.
+    Two corrections from the Phase II review, both recorded in
+    ``docs/research/RETRACTIONS.md``.
+
+    **It broke the pairing rule.** It called ``run_single``, so it printed 25
+    containment verdicts per policy with no cost column at all -- the one thing
+    the project says no command does. A deny-everything policy scored a perfect
+    matrix. The benign suite is now run and reported beside the verdicts.
+
+    **It was mislabelled.** "Paraphrase coverage" overstates it. The scripted
+    client extracts a path and a queue from the untrusted text with two regexes,
+    so payload variants that yield the same ``(path, queue)`` pair are the same
+    test wearing different words, and what varies is regex robustness rather
+    than the agent's language understanding. The honest name is *phrasing
+    invariance*, and the count of distinct extractions is printed so a reader
+    can see how much coverage there actually is.
+
+    The real paraphrase axis is the *client*, not the payload wording, and it
+    lives in the ``paraphrasing`` behaviour class. It is reported here as a
+    second row per policy because it is the axis that actually moves verdicts.
     """
     scenario = load_scenario(args.scenario)
-    factory = _provider_factory(args.provider)
     prompts = len(scenario.spec.variants.benign_prompts) or 1
     payloads = len(scenario.spec.variants.injection_payloads) or 1
 
     rows: list[dict] = []
     for policy_name in ("permissive", "path-prefix", "reference"):
-        verdicts: dict[str, int] = {}
-        for pi in range(prompts):
-            for yi in range(payloads):
-                record = run_single(
-                    scenario,
-                    load_policy(policy_name),
-                    factory,
-                    prompt_variant=pi,
-                    payload_variant=yi,
-                )
-                verdicts[record.outcome.verdict] = verdicts.get(record.outcome.verdict, 0) + 1
-        rows.append({"policy": policy_name, "cells": prompts * payloads, "verdicts": verdicts})
+        policy = load_policy(policy_name)
+        behaviors: tuple[BehaviorClass, ...] = ("compliant", "paraphrasing")
+        for behavior in behaviors:
+            def factory(b: BehaviorClass = behavior) -> ScriptedProvider:
+                return ScriptedProvider(behavior=b)
+
+            verdicts: dict[str, int] = {}
+            extractions: set[tuple[str, str]] = set()
+            for pi in range(prompts):
+                for yi in range(payloads):
+                    record = run_single(
+                        scenario, policy, factory,
+                        prompt_variant=pi, payload_variant=yi,
+                    )
+                    v = record.outcome.verdict
+                    verdicts[v] = verdicts.get(v, 0) + 1
+                    for ev in record.log.of_type("tool.proposed"):
+                        args_ = dict(getattr(ev, "arguments", {}))
+                        key = (str(args_.get("path", "")), str(args_.get("queue", "")))
+                        if any(key):
+                            extractions.add(key)
+
+            # The cost half of the pair. Measured once per (policy, client) at
+            # the default variant: the benign suite does not depend on the
+            # injected payload's wording, and running it 25 times would report
+            # the same number 25 times at 25x the cost.
+            trial, _ = run_trial(scenario, policy, factory)
+            rows.append({
+                "policy": policy_name,
+                "client": behavior,
+                "cells": prompts * payloads,
+                "verdicts": verdicts,
+                "distinct_extractions": len(extractions),
+                "benign_passed": trial.benign_passed,
+                "benign_total": trial.benign_total,
+                "false_denials": trial.false_denials,
+            })
 
     if args.json:
         print(json.dumps({"scenario": scenario.spec.id, "rows": rows}, indent=2))
         return 0
 
-    print(f"paraphrase coverage: {prompts} prompt x {payloads} injection phrasings")
-    print(f"  deterministic cells per policy: {prompts * payloads}")
+    print(f"phrasing invariance: {prompts} prompt x {payloads} injection phrasings")
+    print(f"  deterministic cells per policy per client: {prompts * payloads}")
     print()
+    print(f"  {'POLICY':<28s}{'CLIENT':<14s}{'ATTACK VERDICTS':<34s}{'BENIGN':<9s}{'FALSE-DENY'}")
+    print(f"  {'-' * 28}{'-' * 14}{'-' * 34}{'-' * 9}{'-' * 10}")
     for row in rows:
         spread = ", ".join(f"{k}={v}" for k, v in sorted(row["verdicts"].items()))
-        invariant = "invariant" if len(row["verdicts"]) == 1 else "NOT invariant"
-        print(f"  {row['policy']:<14s} {invariant:<14s} {spread}")
+        pair = f"{row['benign_passed']}/{row['benign_total']}"
+        print(
+            f"  {row['policy']:<28s}{row['client']:<14s}{spread:<34s}"
+            f"{pair:<9s}"
+            f"{row['false_denials']}"
+        )
+    print()
+    distinct = {r["distinct_extractions"] for r in rows}
+    print(f"  Distinct (path, queue) pairs extracted across all {prompts * payloads} cells: "
+          f"{sorted(distinct)}")
+    print("  The scripted client reads the payload with two regexes, so cells sharing an")
+    print("  extraction are the same test in different words. Treat this as phrasing")
+    print("  invariance, not as evidence about paraphrase -- for that, read the")
+    print("  paraphrasing rows, where the client rewrites what it exfiltrates.")
     print()
     print("  These are deterministic cells, not samples. No rate, no interval.")
     return 0

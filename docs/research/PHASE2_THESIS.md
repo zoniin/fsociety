@@ -17,10 +17,14 @@ Phase I produced one surprising result — a policy that looked defensible again
 one scenario failed against a second. Phase II asked whether that was an
 accident. **It was not an accident, but it was much smaller than advertised, and
 the apparatus that produced it is substantially broken.** The measured
-containment of the reference policy across all three scenarios is an artifact of
-the scripted client pasting file contents verbatim; under a client that restates
-the same facts, the reference policy denies nothing, anywhere, and the harness's
-own exposure detector simultaneously stops reporting the leak. The grader shares
+containment of the reference policy's **flow rule** is an artifact of the
+scripted client pasting file contents verbatim; under a client that restates the
+same facts, R3 issues zero denials on both egress scenarios and the harness's own
+exposure detector simultaneously stops reporting the leak. (An earlier draft of
+this paragraph said the policy "denies nothing, anywhere". That was an overclaim
+and is corrected as C1 in the findings register: R2, the read rule, is
+content-independent and survives paraphrase intact, which is why scenario 1 is
+unaffected and why the defect went unnoticed for a phase.) The grader shares
 its entitlement predicate with the policy it grades. The freeze does not detect
 the drift it was built to detect. The challenge workflow is both unwinnable by
 construction and forgeable three ways. Confidence in the project's **claims**
