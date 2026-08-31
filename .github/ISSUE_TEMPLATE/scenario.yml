@@ -1,0 +1,41 @@
+name: Scenario proposal
+description: A new attack or benign task for the corpus. The contribution we most want.
+labels: [good-first-scenario]
+body:
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Which trust boundary does it exercise?
+      description: >-
+        Untrusted content reaching a privileged call is the existing one. Say
+        what is different: a different vector, a different principal
+        relationship, a different data flow.
+    validations:
+      required: true
+  - type: textarea
+    id: benign
+    attributes:
+      label: The benign task that makes it non-trivial
+      description: >-
+        REQUIRED, and it is the important half. Which legitimate task uses the
+        same tool and argument shape as the attack, so that over-blocking is
+        measurable? A scenario without one cannot be run.
+    validations:
+      required: true
+  - type: dropdown
+    id: breaks-reference
+    attributes:
+      label: Does it get past `reference-least-privilege`?
+      options:
+        - "Yes -- it defeats the reference policy"
+        - "No -- the reference policy contains it"
+        - "Unknown, have not run it"
+    validations:
+      required: true
+  - type: textarea
+    id: primitives
+    attributes:
+      label: Does it need a tool that does not exist?
+      description: >-
+        If yes, that is a core change (Tier 2) rather than a data-only
+        scenario, and worth saying up front. See CONTRIBUTING.md.

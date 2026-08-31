@@ -1,0 +1,30 @@
+name: Policy / defense proposal
+description: An authorization layer to measure on the frontier.
+labels: [policy-adapter]
+body:
+  - type: input
+    id: engine
+    attributes:
+      label: Which engine or technique?
+      placeholder: Cedar, OPA, OpenFGA, label propagation, human approval, ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What does it need from DecisionContext that is not there?
+      description: >-
+        Be specific. Starving a defense makes the comparison a strawman, and
+        this is the field most likely to need extending. Note what it must
+        NEVER receive: see docs/PROTOCOL.md, the blindness rule.
+    validations:
+      required: true
+  - type: textarea
+    id: install
+    attributes:
+      label: What does installing it cost?
+      description: >-
+        A sidecar or a build step breaks the no-build-step install that is
+        currently the strongest adoption property. Say so honestly.
+    validations:
+      required: true

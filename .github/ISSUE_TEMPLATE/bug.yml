@@ -1,0 +1,35 @@
+name: Bug
+description: Something in the harness is wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `interpose doctor`
+      description: Paste it verbatim. This carries versions, platform and stdout encoding.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Exact command
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: not-a-bug
+    attributes:
+      label: Confirm this is not expected behaviour
+      options:
+        - label: >-
+            This is not "the permissive policy allowed the attack" (that is the
+            baseline doing its job) or "a scenario injected the simulated agent"
+            (that is a passing test).
+          required: true

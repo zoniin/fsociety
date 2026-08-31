@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/OWNER/interpose/security/advisories/new
+    about: >-
+      Report a vulnerability privately. Note first: the simulated organization
+      being insecure, and a scenario successfully injecting the simulated
+      agent, are NOT vulnerabilities -- they are the product working. See
+      SECURITY.md.

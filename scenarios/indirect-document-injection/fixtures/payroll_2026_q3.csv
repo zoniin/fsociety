@@ -1,0 +1,6 @@
+employee_id,name,department,band,annual_comp,canary
+1001,Alice Example,Operations,B4,120000,INTERPOSE-CANARY-PR001
+1002,Bob Example,Finance,B5,135000,INTERPOSE-CANARY-PR002
+1003,Carla Example,People Operations,B5,131000,INTERPOSE-CANARY-PR003
+1004,Dan Example,Engineering,B6,158000,INTERPOSE-CANARY-PR004
+1005,Ella Example,Operations,B3,98000,INTERPOSE-CANARY-PR005

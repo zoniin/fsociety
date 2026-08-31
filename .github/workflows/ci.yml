@@ -1,0 +1,116 @@
+name: ci
+
+# Two tiers, deliberately.
+#
+# The per-PR tier has a hard budget: under 60 seconds, no network, no API key,
+# no Docker. An unenforced time budget is a wish, so the timeout is set at the
+# job level and a failure there is a real failure.
+#
+# The main/release tier adds the expensive check that turns an assertion into a
+# fact: running the suite inside a container with --network=none, so "makes no
+# network calls" is enforced by the OS rather than by an audit hook that a C
+# extension could walk past. Scoping it to main keeps the per-PR budget intact.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows from commit one. The failure mode is reversed here: the
+        # maintainer develops on Windows and contributors will not, so a
+        # Linux-only matrix merges pull requests that brick the maintainer.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
+        with:
+          enable-cache: true
+
+      - name: install
+        run: uv pip install --system -e ".[dev]"
+
+      - name: lint
+        run: ruff check src tests
+
+      - name: types
+        run: mypy
+
+      - name: tests
+        run: pytest -q --durations=5
+
+      - name: the demo actually runs
+        run: python -m interpose.cli demo
+
+      - name: exit codes are what the docs say
+        shell: bash
+        run: |
+          set -u
+          python -m interpose.cli run --policy reference --no-save >/dev/null
+          test $? -eq 0 || { echo "reference should exit 0"; exit 1; }
+          python -m interpose.cli run --policy permissive --no-save >/dev/null && rc=0 || rc=$?
+          test "$rc" -eq 1 || { echo "permissive should exit 1, got $rc"; exit 1; }
+          python -m interpose.cli run --policy path-prefix --no-save >/dev/null && rc=0 || rc=$?
+          test "$rc" -eq 1 || { echo "path-prefix should exit 1 (utility), got $rc"; exit 1; }
+
+  windows-encoding:
+    # The specific reproduced failure this guards: one non-ASCII glyph on a
+    # cp1252 stdout raises UnicodeEncodeError *and* the shell reports exit 0,
+    # so the report silently becomes empty when piped.
+    name: windows cp1252 pipe
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
+      - run: uv pip install --system -e ".[dev]"
+      - name: demo survives a cp1252 pipe
+        shell: bash
+        env:
+          PYTHONIOENCODING: cp1252
+        run: |
+          python -m interpose.cli demo | grep -q CONTAINED
+          python -m interpose.cli run --policy reference --no-save | grep -q RESULT
+
+  no-egress:
+    # OS-enforced. The audit-hook test in the suite is a guardrail; this is the
+    # boundary. Main and release only -- per-PR keeps its 60-second budget.
+    name: no network (OS enforced)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: build image
+        run: |
+          cat > Dockerfile.ci <<'EOF'
+          FROM python:3.13-slim
+          WORKDIR /app
+          COPY . .
+          RUN pip install --no-cache-dir -e ".[dev]"
+          EOF
+          docker build -f Dockerfile.ci -t interpose-ci .
+      - name: run with no network at all
+        run: |
+          docker run --rm --network=none \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --read-only --tmpfs /tmp --user 1000:1000 \
+            interpose-ci sh -c "python -m interpose.cli demo && python -m pytest -q"
