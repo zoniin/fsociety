@@ -41,6 +41,16 @@ unmeasured amount relative to a real out-of-process gateway.
 path from the agent, serialization as the trust boundary, decisions over a
 socket. That is the first milestone in `ROADMAP.md`.
 
+**Measured, not yet built.** A JSON-over-pipe policy server costs 0.076 ms per
+decision steady-state and 159 ms per spawn, so a persistent server adds about 1%
+to a full `demo` -- latency is not why this is unbuilt. The reason is that it
+would not close this entry. Moving the *decision* out of process stops a policy
+adapter tampering with the runner; it does not move the *enforcement* point,
+`Runner._dispatch`, out of the agent's process, which is what this simplification
+is about. See [`CEDAR-AND-ISOLATION.md`](CEDAR-AND-ISOLATION.md) §2 for the
+numbers and for why restricting the isolated process further costs the
+no-build-step install on all three platforms.
+
 **Real-world analogue.** AWS AgentCore Policy evaluating with Cedar at the
 gateway; FORGE's reference-monitor architecture.
 **Background.** Anderson 1972 (Computer Security Technology Planning Study);

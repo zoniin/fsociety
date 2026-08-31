@@ -62,11 +62,17 @@ better than it is.
 engine can be measured on this frontier.
 
 - Cedar first: embeddable, and AWS AgentCore Policy already uses it for exactly
-  this shape of decision. **Open question that must be answered before
-  starting:** Cedar has no taint or information-flow primitive, so it may not
-  be able to express the R3 egress rule at all. If it cannot, that is itself a
-  publishable finding about the gap between deployed authorization engines and
-  what agent security needs.
+  this shape of decision. **The open question is answered** -- see
+  [`CEDAR-AND-ISOLATION.md`](CEDAR-AND-ISOLATION.md). Cedar can express R3, but
+  only decomposed to one tainted source per request; the nested quantification
+  R3 is written as is rejected at parse, because Cedar has no lambda. The gap is
+  arity, not expressiveness, and the consequence is the publishable part: a
+  Cedar-based gateway authorizes *actions*, and something upstream of it has to
+  authorize *flows*. `cedarpy` installs as a prebuilt wheel, so the no-build-step
+  property survives, and the `SecurityPolicy` interface needed no change.
+  **Constraint for this and every adapter:** a PEP may decompose a question, it
+  may not answer one. An adapter that has the harness precompute the verdict is
+  measuring the harness.
 - OPA second, and only behind an extra: an OPA sidecar breaks the no-build-step
   install that is currently the strongest adoption property.
 - A human-approval adapter against a simulated approver with a configurable

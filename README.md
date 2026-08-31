@@ -162,6 +162,7 @@ CI gate rather than noise.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a scenario in about twenty minutes |
 | [`SECURITY.md`](SECURITY.md) | containment commitment; what is and is not a vulnerability |
 | [`docs/V0_REVIEW.md`](docs/V0_REVIEW.md) | what an adversarial review found, what was fixed, what still stands |
+| [`docs/CEDAR-AND-ISOLATION.md`](docs/CEDAR-AND-ISOLATION.md) | can Cedar express an information-flow rule? measured, with the answer |
 
 ## Contributing
 
