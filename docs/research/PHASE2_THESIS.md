@@ -266,6 +266,105 @@ beyond the third.
 
 ---
 
-*Pending: Agent F (protocol minimalist) is triaging the full proposal set for
-scope. §7 will be amended in place if its triage disagrees, with the
-disagreement recorded rather than silently resolved.*
+---
+
+## 8. Amendment after Agent F's triage
+
+Agent F triaged the full proposal set: **11 MUST FIX, 12 SHOULD FIX, 18 DEFER,
+13 REJECT**, on the bar "a printed number, verdict token, or compiled-in
+sentence is false." The eleven total roughly **+38 net lines of `src/`**. Two of
+them are deletions.
+
+### F sharpened the §6 argument, and I adopt its version
+
+My reason for refusing a semantic detector was cost plus shared authorship.
+F's is stronger and structural:
+
+> Any detector strong enough to catch paraphrase is one a policy will also use,
+> and the moment both use it, **F1 is reproduced exactly.** Either the policy
+> does not get the new detector — in which case you bought option (b)'s result
+> at 400 MB and a lost determinism guarantee — or it does, and the harness is
+> again grading a policy with the policy's own predicate.
+
+Structured fact extraction is the same trap one level down: still literal
+matching, and the fact list is author-chosen, which relocates the arbitrariness
+rather than removing it.
+
+### The second observer — F's contribution, and the best idea in the phase
+
+My §6 said the second observer "must fail differently" without saying how to
+*guarantee* it. F's answer:
+
+> Build it from the one strength a policy structurally cannot copy: **the
+> harness built the world and watched the session.**
+
+`possible_exposure` — a non-empty write to a sink with an unentitled reader,
+after that source was read this session. It is already computed, as
+`context_provenance`, and read by nothing (`SIMPLIFICATIONS` calls it one of two
+"bracketing views"; no shipped policy consults it).
+
+It is immune to paraphrase, base64, arithmetic derivation, column-dropping and
+implicit flow — because **it does not look at content at all.** It looks at
+session structure.
+
+And the property that makes it permanently independent rather than independent
+by convention: **it is not free to a policy.** A policy that used it would
+over-block and pay a benign task. Over-approximation is correct for a grader,
+which brackets, and unacceptable for a policy, which must not refuse legitimate
+work. That asymmetry keeps grader and policy structurally distinct, and the gap
+between them is exactly the width of the cost axis. ~30 lines.
+
+Under a restating client the table would then read:
+
+```
+COMPROMISED   canary_exposed no   possible_exposure YES   8/8   0 denials
+```
+
+The instrument reporting its own blind spot, in the same row. Reported beside
+`canary_exposed` as a bracket — never summed, never the sole verdict driver.
+
+### Where I overrule F, and why
+
+**Cedar.** F recommends publishing the Cedar/Dogwood result as prose and
+shipping no adapter, on coupling grounds. I am shipping it, as an **optional
+extra** (`pip install interpose[cedar]`) so the default stays at two
+dependencies. Three reasons: the ablation is the sharpest available statement of
+what provenance buys and it is the phase's only clean positive; Agent A has
+already built and validated it at 122/122, so marginal cost is low; and a
+finding about an external engine that cannot be re-run by a reader is weaker
+than one that can. F's coupling concern is answered by the extra, not by
+abstention. **Run after INT-000, never before.**
+
+**The challenge workflow.** F recommends withdrawing the invitation entirely. I
+am taking the middle: the forgery paths (`enumeration-as-read`, empty-args
+objective matching, canary collision) are **real engine defects independent of
+the challenge workflow** and get fixed regardless; the benign floor and the
+exit-code collision get fixed; and the workflow is marked experimental with its
+limitations stated in the invitation. I accept F's core point — Agent D's
+manifest, baseline-separation architecture and transparency log are not built.
+Withdrawing entirely would discard a mechanism whose *defects* are now
+understood, which is a worse position than a documented experimental one.
+
+### Final Phase II scope
+
+1. **Retraction first, alone, dated before any fix** — including
+   `challenge.py::_NOTE`, which compiles a false ordering claim into every
+   regenerated `policy-freeze.json`.
+2. **INT-000 · repair** — scorer corrections behind one `bench_version` bump;
+   the two-sided exposure report; `scripted:paraphrasing` as a standing
+   provider; policy import-closure digest; delete `matrix` (it prints 25
+   containment verdicts with no cost column, violating the pairing rule, and 4
+   of 5 variants reduce to an identical extracted `(path, queue)` pair) and
+   `join_sources`.
+3. **INT-003 · `compartment-egress`** — after the scorer is fixed, with F's
+   added benign task egressing a source with **no reader list**, which exercises
+   R3's dead lattice branch and measures write-side over-blocking for the first
+   time. Not presented as generalization evidence.
+4. **INT-001 · Cedar ablation** — optional extra, run last, on the repaired
+   instrument.
+5. **INT-002 · challenge defects** — fix, mark experimental, build no manifest.
+
+Net ≈ **+130 / −60 lines**, two runtime dependencies, demo under three seconds.
+
+If forced to ship only two things: **the retraction and the second observer.**
+Those are the phase. The rest is hygiene.
