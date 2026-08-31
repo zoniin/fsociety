@@ -23,8 +23,9 @@ single call site in :func:`evaluate` is the only thing that changes.
 from __future__ import annotations
 
 import importlib
-import inspect
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Protocol, cast, runtime_checkable
 
 from ..digest import sha256_text
@@ -117,11 +118,48 @@ def policy_digest(policy: SecurityPolicy) -> str:  # SIMPL-0007
     override = getattr(policy, "digest", None)
     if callable(override):
         return str(override())
-    try:
-        source_file = inspect.getsourcefile(type(policy))
-        if source_file:
-            text = Path(source_file).read_text(encoding="utf-8")
-            return sha256_text(text)
-    except (OSError, TypeError):
-        pass
+    texts = _import_closure_sources(type(policy))
+    if texts:
+        return sha256_text("\n".join(texts))
     return sha256_text(f"{policy.id}:{policy.version}")
+
+
+def _import_closure_sources(cls: type) -> list[str]:
+    """Source of the policy's module plus every ``interpose`` module it imports.
+
+    Hashing one file was not enough, and the gap was not theoretical: R3's
+    entitlement logic lives in ``policy/types.py``, not ``policy/reference.py``.
+    Three lines replaced in ``types.py`` gutted R3 -- the flagship scenario
+    started leaking -- while ``reference.py`` stayed byte-identical and
+    ``freeze --check`` printed FREEZE INTACT and exited 0. Retraction R6.
+
+    The closure is walked transitively and restricted to first-party modules;
+    third-party and stdlib versions are pinning's job, not this function's. A
+    policy whose behaviour lives outside imported source -- a remote service, a
+    data file -- still gets a digest that does not capture it, and should
+    override ``digest`` itself. That residue is SIMPL-0007.
+    """
+    seen: set[str] = set()
+    queue = [getattr(cls, "__module__", "")]
+    files: list[tuple[str, str]] = []
+    while queue:
+        name = queue.pop()
+        if not name or name in seen or not name.startswith("interpose"):
+            continue
+        seen.add(name)
+        module = sys.modules.get(name)
+        if module is None:
+            continue
+        path = getattr(module, "__file__", None)
+        if path:
+            try:
+                files.append((name, Path(path).read_text(encoding="utf-8")))
+            except OSError:
+                continue
+        for value in vars(module).values():
+            origin = getattr(value, "__module__", None)
+            if isinstance(origin, str):
+                queue.append(origin)
+            elif isinstance(value, ModuleType):
+                queue.append(value.__name__)
+    return [text for _, text in sorted(files)]

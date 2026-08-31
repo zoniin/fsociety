@@ -60,7 +60,6 @@ __all__ = [
     "Source",
     "Tagged",
     "TrustClass",
-    "join_sources",
 ]
 
 T = TypeVar("T")
@@ -147,14 +146,6 @@ class Tagged(Generic[T]):
 
     def sorted_sources(self) -> list[Source]:
         return sorted(self.sources, key=lambda s: s.unit_id)
-
-
-def join_sources(*tagged: Tagged[object]) -> frozenset[Source]:
-    """Lattice join: the union of every input source set."""
-    out: frozenset[Source] = frozenset()
-    for t in tagged:
-        out |= t.sources
-    return out
 
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")

@@ -30,7 +30,6 @@ from interpose.provenance import (
     Source,
     Tagged,
     TrustClass,
-    join_sources,
 )
 from interpose.scenario.loader import load_scenario
 from interpose.scenario.spec import CallPattern, ScenarioSpec
@@ -63,11 +62,6 @@ def test_digest_is_stable_across_calls() -> None:
 def _src(unit: str, cls: Cls = Cls.INTERNAL, trust: TrustClass = TrustClass.TRUSTED_SYSTEM):
     return Source(unit_id=unit, resource_uri=f"res://{unit}", trust=trust, classification=cls)
 
-
-def test_tagged_join_takes_the_union_of_sources() -> None:
-    a = Tagged("x", frozenset({_src("u1")}))
-    b = Tagged("y", frozenset({_src("u2")}))
-    assert {s.unit_id for s in join_sources(a, b)} == {"u1", "u2"}
 
 
 def test_max_classification_is_the_lattice_top() -> None:
