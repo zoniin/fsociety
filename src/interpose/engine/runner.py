@@ -426,6 +426,7 @@ class Runner:
             call_id=call_id,
             tool=tool_name,
             resource_uris=sorted(outcome.resource_uris),
+            enumerated_uris=sorted(outcome.enumerated_uris),
             effect_class=tool.effect_class,
             result_digest=sha256_text(text),
             result_provenance=sorted(s.unit_id for s in outcome.result.sources),

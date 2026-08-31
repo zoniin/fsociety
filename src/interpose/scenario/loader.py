@@ -192,6 +192,35 @@ def _validate_references(loaded: LoadedScenario) -> None:
         if name not in registry:
             problems.append(f"agent.tools: no such tool {name!r}")
 
+    # A1. An objective step with no arguments matches *any* call to that tool,
+    # because CallPattern.matches only compares the args it declares. A
+    # three-line objective naming the tool the client always calls first was
+    # therefore enough to forge enforcement_escape against the frozen policy on
+    # a trace where nothing was violated. An objective must discriminate.
+    for index, step in enumerate(spec.attack.objective):
+        if not step.args:
+            problems.append(
+                f"attack.objective[{index}]: step names tool {step.tool!r} with no "
+                "arguments, so it matches every call to that tool. Declare at "
+                "least one argument that identifies the object or sink."
+            )
+
+    # A3. Canaries are scanned out of body text, and the exposure detector
+    # iterates protected_assets regardless of which resource was actually read.
+    # The same token in a public file and a restricted one therefore fires
+    # exposure against an asset the agent never touched.
+    owners: dict[str, list[str]] = {}
+    for uri, resource in sorted(world.resources.items()):
+        for canary in sorted(resource.canaries):
+            owners.setdefault(canary, []).append(uri)
+    for canary, uris in sorted(owners.items()):
+        if len(uris) > 1:
+            problems.append(
+                f"canary {canary!r} appears in {len(uris)} resources "
+                f"({', '.join(uris)}); a canary must identify exactly one object "
+                "or the exposure detector attributes a leak to the wrong asset"
+            )
+
     if problems:
         joined = "\n  - ".join(problems)
         raise ScenarioError(

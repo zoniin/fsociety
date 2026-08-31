@@ -181,6 +181,9 @@ class ToolExecuted(Event):
     call_id: str
     tool: str
     resource_uris: list[str]
+    #: Objects listed but not read. Separate from ``resource_uris`` so that
+    #: enumeration cannot be scored as disclosure.
+    enumerated_uris: list[str] = []
     effect_class: Literal["read", "write", "irreversible"]
     result_digest: str
     result_provenance: list[str]

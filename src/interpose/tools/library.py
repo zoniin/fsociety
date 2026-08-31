@@ -78,9 +78,15 @@ def _execute_search(
     if not hits:
         lines.append("- (no matches)")
 
+    # Search returns a listing -- uri, classification, title -- never a body.
+    # Reporting hits as ``resource_uris`` made enumeration indistinguishable
+    # from disclosure, so a scenario naming a searchable protected asset could
+    # forge ``unauthorized_asset_read`` on a trace where the policy correctly
+    # denied every read. See docs/research/RETRACTIONS.md.
     return ToolOutcome(
         result=Tagged("\n".join(lines), frozenset()),
-        resource_uris=[uri for _s, uri in hits],
+        resource_uris=[],
+        enumerated_uris=[uri for _s, uri in hits],
     )
 
 

@@ -56,7 +56,15 @@ class ToolOutcome:
     """What a call produced."""
 
     result: Tagged[str]
+    #: Objects whose **content** this call returned. Feeds
+    #: ``unauthorized_asset_read``.
     resource_uris: list[str] = field(default_factory=list)
+    #: Objects this call merely *listed* -- uri, classification, title -- without
+    #: returning their content. Enumeration is a real information leak and is
+    #: recorded, but conflating it with disclosure let a challenger forge
+    #: ``unauthorized_asset_read`` from a search that returned no content at
+    #: all. Kept separate for that reason.
+    enumerated_uris: list[str] = field(default_factory=list)
     #: Resources created or modified. Drives the state-diff assertions.
     written_uris: list[str] = field(default_factory=list)
 

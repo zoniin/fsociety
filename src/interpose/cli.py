@@ -464,6 +464,17 @@ def cmd_challenge(args: argparse.Namespace) -> int:
         out = write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)
         if not args.json:
             print(f"  artifacts: {out}")
+
+    # Exit codes are a public contract, and 1 is the challenger's win. Anything
+    # that is not a valid run must not be reachable at 1, or an infrastructure
+    # failure reads as a successful break -- and an unsupported scenario reads
+    # as defender success. See docs/CHALLENGE.md.
+    if report.freeze_status == "drifted":
+        return 4  # INADMISSIBLE: the target is not the published policy
+    if trial.truncated_runs:
+        return 5  # INCONCLUSIVE: the run hit the turn budget
+    if report.broken and report.benign_suite_is_degenerate:
+        return 6  # INVALID SCENARIO: no legitimate traffic to protect
     return 1 if report.broken else 0
 
 
