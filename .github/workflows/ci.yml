@@ -71,6 +71,45 @@ jobs:
           python -m interpose.cli run --policy path-prefix --no-save >/dev/null && rc=0 || rc=$?
           test "$rc" -eq 1 || { echo "path-prefix should exit 1 (utility), got $rc"; exit 1; }
 
+  freeze:
+    # The ordering guarantee, enforced rather than asserted.
+    #
+    # docs/PROTOCOL.md claims the published policies were frozen before the
+    # attacks that score them, and points at git commit order as the proof.
+    # That claim decays the moment someone edits a frozen policy without
+    # re-freezing deliberately -- and it decays silently, because every test
+    # still passes. This job is what makes the claim checkable on every PR.
+    name: policy freeze intact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
+        with:
+          enable-cache: true
+      - run: uv pip install --system -e ".[dev]"
+
+      - name: frozen policies still match their published digests
+        run: python -m interpose.cli freeze --check
+
+      - name: the challenge contract holds both ways
+        shell: bash
+        run: |
+          set -u
+          # Exit 0 when the policy holds. A challenger's CI can key off this.
+          python -m interpose.cli challenge confidential-egress >/dev/null && rc=0 || rc=$?
+          test "$rc" -eq 0 || { echo "reference should hold, got exit $rc"; exit 1; }
+          # Exit 1 when it is broken. If this ever returns 0, the workflow is
+          # decorative -- a real break would be reported as a pass.
+          python -m interpose.cli challenge indirect-document-injection \
+            --policy permissive >/dev/null && rc=0 || rc=$?
+          test "$rc" -eq 1 || { echo "a broken policy must exit 1, got $rc"; exit 1; }
+
+      - name: a scaffolded scenario passes before it is edited
+        run: |
+          python -m interpose.cli new scenario ci-scaffold --directory /tmp/scaf
+          python -m interpose.cli challenge /tmp/scaf/ci-scaffold
+
   windows-encoding:
     # The specific reproduced failure this guards: one non-ASCII glyph on a
     # cp1252 stdout raises UnicodeEncodeError *and* the shell reports exit 0,

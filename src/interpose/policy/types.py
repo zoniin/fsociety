@@ -48,6 +48,7 @@ __all__ = [
     "PrincipalView",
     "PriorDecision",
     "ProvenanceView",
+    "ReaderView",
     "ResourceView",
     "SinkView",
     "SourceView",
@@ -76,12 +77,20 @@ DENY = Effect.DENY
 
 @dataclass(frozen=True)
 class SourceView:
-    """One labelled content unit, as a policy sees it."""
+    """One labelled content unit, as a policy sees it.
+
+    ``readers`` is the source resource's explicit need-to-know allowlist, empty
+    when access is governed by clearance alone. An egress rule needs it: a
+    principal may be entitled to a specific confidential object by grant while
+    its clearance says otherwise, and a rule that only compares clearances will
+    refuse writes that are perfectly legitimate.
+    """
 
     unit_id: str
     resource_uri: str
     trust: TrustClass
     classification: Classification
+    readers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -136,31 +145,64 @@ class ResourceView:
 
 
 @dataclass(frozen=True)
+class ReaderView:
+    """One principal who can read a sink after a write lands there."""
+
+    id: str
+    clearance: Classification
+
+    def entitled_to(self, source: SourceView) -> bool:
+        """Would this reader be permitted to read ``source`` directly?
+
+        The question an egress rule actually has to answer. Comparing bulk
+        clearances is not the same thing: an explicit grant can entitle a
+        reader whose clearance does not dominate, and a rule that ignores
+        grants refuses legitimate work.
+        """
+        if source.readers:
+            return self.id in source.readers
+        return CLASSIFICATION_ORDER[self.clearance] >= CLASSIFICATION_ORDER[source.classification]
+
+
+@dataclass(frozen=True)
 class SinkView:
     """Where a write lands, and who can read it afterwards.
 
-    Both extremes are given, because they answer different questions and
-    picking the wrong one silently disables an egress rule.
-
-    ``min_reader_clearance`` is the *least* cleared principal who can read the
-    sink, and it is the one confidentiality needs: a queue is only as
-    confidential as its weakest reader. Comparing against the maximum instead
-    lets data flow into a queue that one insider and one outsider can both
-    read, because the insider covers for the outsider. That inversion shipped
-    in the first draft and disabled R3 entirely; see docs/V0_REVIEW.md.
+    Carries the full readership rather than a summary statistic. Two earlier
+    versions of this type each hid a bug behind an aggregate: taking the
+    *maximum* clearance let an insider on the readership cover for an
+    outsider, and taking the minimum then over-refused writes whose readers
+    held explicit grants. Neither could be expressed correctly without the
+    individual readers. See docs/V0_REVIEW.md.
     """
 
     id: str
-    reader_principal_ids: tuple[str, ...]
-    max_reader_clearance: Classification
-    min_reader_clearance: Classification
+    readers: tuple[ReaderView, ...] = ()
 
-    def reader_rank(self) -> int:
-        """The rank an egress rule compares against: the weakest reader."""
-        return CLASSIFICATION_ORDER[self.min_reader_clearance]
+    @property
+    def reader_principal_ids(self) -> tuple[str, ...]:
+        return tuple(r.id for r in self.readers)
 
-    def strongest_reader_rank(self) -> int:
-        return CLASSIFICATION_ORDER[self.max_reader_clearance]
+    @property
+    def min_reader_clearance(self) -> Classification:
+        """The weakest reader. A queue is only as confidential as this."""
+        if not self.readers:
+            return Classification.PUBLIC
+        return min(
+            ((CLASSIFICATION_ORDER[r.clearance], r.clearance) for r in self.readers),
+        )[1]
+
+    @property
+    def max_reader_clearance(self) -> Classification:
+        if not self.readers:
+            return Classification.PUBLIC
+        return max(
+            ((CLASSIFICATION_ORDER[r.clearance], r.clearance) for r in self.readers),
+        )[1]
+
+    def unentitled_readers(self, source: SourceView) -> tuple[ReaderView, ...]:
+        """Readers of this sink who could not read ``source`` directly."""
+        return tuple(r for r in self.readers if not r.entitled_to(source))
 
 
 @dataclass(frozen=True)

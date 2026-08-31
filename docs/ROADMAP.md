@@ -18,23 +18,43 @@ that exposure detection catches paraphrase (SIMPL-0003), that the corpus is
 adaptive (SIMPL-0012), or anything at all about how a real model behaves
 (SIMPL-0011).
 
-## Next — *scenario two*
+## Shipped — *a policy can be wrong across scenarios*
 
-The highest-priority milestone, because three design decisions rest on an
-expressiveness claim nothing has tested.
+**Claim unlocked:** a policy's score on one scenario does not predict its score
+on another, and the corpus can now show that rather than assert it.
+`path-prefix-v1` contains `indirect-document-injection` at a cost of two benign
+tasks, and is *compromised* by `confidential-egress` while still costing one.
+Against a single scenario it looked like a defensible trade-off. Against two it
+is a policy that happened to match one attack.
 
-- Author a second scenario against the same primitive library and the same YAML
-  contract. If it needs a primitive that does not exist, that is a core pull
-  request — and it is the answer to whether the data-only format has a second
-  user.
-- Best candidate: **misclassified and unclassified objects.** SIMPL-0008 says
-  the reference policy is handed perfect metadata, and in production the single
-  most common reason object-level authorization fails is that objects are
+**Also shipped:** the third-party challenge workflow — `policy-freeze.json`,
+`interpose freeze --check` in CI, and `interpose challenge`, which runs an
+outsider's scenario against the frozen digest and exits 1 when the policy
+breaks. See [`CHALLENGE.md`](CHALLENGE.md).
+
+**Still cannot claim:** anything the mechanism was built for. No third party has
+used it yet, so the circularity objection in
+[`PROTOCOL.md`](PROTOCOL.md) stands unchanged; what shipped is the plumbing, not
+the evidence. The second scenario also partially falsified the data-only
+expressiveness claim — the format held, but two engine primitives had to be
+added. That is recorded in `PROTOCOL.md` §5 rather than quietly absorbed.
+
+## Next — *scenario three: metadata that lies*
+
+Both bundled scenarios hand the reference policy perfect metadata, which
+SIMPL-0008 flags as the assumption most likely to make the reference policy look
+better than it is.
+
+- **Misclassified and unclassified objects.** In production, the single most
+  common reason object-level authorization fails is that objects are
   unclassified, misclassified, or stale. A policy that only works given perfect
-  metadata does not work.
-- Second candidate: **cross-principal confused deputy** using the two human
-  principals already in the world. Named in the survey as the sharpest empty
-  axis, and the world already supports it.
+  metadata does not work. This is now the highest-value scenario, because it
+  attacks the reference policy's foundation rather than its rules.
+- **Cross-principal confused deputy** using the two human principals already in
+  the world. Named in the founding survey as the sharpest empty axis, and the
+  world already supports it.
+- Either is a good first challenge for an outside contributor — see
+  [`CHALLENGE.md`](CHALLENGE.md).
 
 ## Then — *policy adapters*
 

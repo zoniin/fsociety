@@ -17,7 +17,7 @@ from ..digest import digest_obj, sha256_text
 from ..errors import ScenarioError
 from ..world.build import build_world, load_yaml, resolve_within
 from ..world.models import World
-from .spec import ScenarioSpec
+from .spec import CallPattern, ScenarioSpec
 
 __all__ = ["LoadedScenario", "bundled_root", "discover_scenarios", "load_scenario"]
 
@@ -120,4 +120,81 @@ def load_scenario(ref: str, extra_root: Path | None = None) -> LoadedScenario:
             "fixtures": _fixture_digest(root),
         }
     )
-    return LoadedScenario(spec=spec, root=root, digest=digest)
+    loaded = LoadedScenario(spec=spec, root=root, digest=digest)
+    _validate_references(loaded)
+    return loaded
+
+
+def _validate_references(loaded: LoadedScenario) -> None:
+    """Check every declared call against the world, at load time.
+
+    Without this a contributor typo is absorbed rather than reported. A
+    ``requires_calls`` entry naming a tool that does not exist, or a URI absent
+    from the world, produces a task the agent can never complete -- which the
+    harness then scores as "the agent did not attempt it, not a policy cost",
+    silently moving the utility number that the whole result rests on. A
+    scenario that cannot be satisfied is a broken scenario, and it should fail
+    at load with the task id in the message.
+    """
+    from ..tools.library import build_registry
+
+    spec = loaded.spec
+    world = loaded.build()
+    registry = build_registry()
+    granted = set(spec.agent.tools)
+    problems: list[str] = []
+
+    for principal_field in ("actor", "on_behalf_of"):
+        pid = getattr(spec.agent, principal_field)
+        if pid not in world.principals:
+            problems.append(f"agent.{principal_field}: unknown principal {pid!r}")
+
+    def check(where: str, pattern: CallPattern) -> None:
+        if pattern.tool not in registry:
+            problems.append(
+                f"{where}: no such tool {pattern.tool!r}; "
+                f"available: {', '.join(registry.names())}"
+            )
+            return
+        if pattern.tool not in granted:
+            problems.append(
+                f"{where}: tool {pattern.tool!r} is not in agent.tools, so the "
+                "agent can never make this call"
+            )
+        for key, value in pattern.args.items():
+            text = str(value).strip()
+            if key == "uri" and world.resource(text) is None:
+                problems.append(f"{where}: no resource {text!r} in the world")
+            elif key == "path" and world.resource_by_path(text) is None:
+                problems.append(f"{where}: no file resource at path {text!r}")
+            elif key == "queue" and text not in world.queues:
+                problems.append(
+                    f"{where}: no queue {text!r}; known queues: "
+                    f"{', '.join(sorted(world.queues))}"
+                )
+
+    for task in spec.benign:
+        for index, pattern in enumerate(task.requires_calls):
+            check(f"benign[{task.id}].requires_calls[{index}]", pattern)
+
+    for index, step in enumerate(spec.attack.objective):
+        check(f"attack[{spec.attack.id}].objective[{index}]", step)
+
+    if world.resource(spec.attack.injected_source) is None:
+        problems.append(
+            f"attack.injected_source: no resource {spec.attack.injected_source!r}"
+        )
+    for uri in spec.attack.protected_assets:
+        if world.resource(uri) is None:
+            problems.append(f"attack.protected_assets: no resource {uri!r}")
+
+    for name in spec.agent.tools:
+        if name not in registry:
+            problems.append(f"agent.tools: no such tool {name!r}")
+
+    if problems:
+        joined = "\n  - ".join(problems)
+        raise ScenarioError(
+            f"{loaded.root / 'scenario.yaml'} declares calls that cannot resolve:\n"
+            f"  - {joined}"
+        )

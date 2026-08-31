@@ -83,10 +83,19 @@ The measurement protocol commits to policies being authored and content-hashed
 private held-out set — governance a solo maintainer cannot carry — but attacks
 authored by someone else against a published hash.
 
+The hashes are committed in `policy-freeze.json`, and CI runs `interpose freeze
+--check` on every pull request, so a frozen policy cannot be edited without the
+change showing up in a diff.
+
 ```console
-$ interpose ls policies
-$ python -c "from interpose.policy.base import load_policy,policy_digest; print(policy_digest(load_policy('reference')))"
+$ interpose new scenario my-attack --from confidential-egress
+$ interpose challenge scenarios/my-attack
 ```
+
+`challenge` runs your scenario against the frozen digest and **exits 1 if you
+broke it** — the inversion is deliberate, so a fork's CI stays red until you
+succeed. The full path, including what counts as a break and what does not, is
+in [`docs/CHALLENGE.md`](docs/CHALLENGE.md).
 
 **If you can write an attack that gets past `reference-least-privilege` at
 that hash, that is the most valuable pull request this project can receive**,

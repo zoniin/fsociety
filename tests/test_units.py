@@ -17,6 +17,7 @@ from interpose.policy.types import (
     Effect,
     PrincipalView,
     ProvenanceView,
+    ReaderView,
     ResourceView,
     SinkView,
     SourceView,
@@ -248,15 +249,23 @@ BENIGN_SIBLING = ResourceView(
     path="/hr/headcount.csv",
 )
 # Mirrors what the harness actually builds for the bundled vendor-support
-# queue: one internal reader and one public external reader. The previous
+# queue: one internal reader and one public external reader. An earlier
 # version of this constant described an all-public sink the harness was
 # structurally incapable of producing, so the test passed against a fiction.
 # See docs/V0_REVIEW.md.
 EXTERNAL_SINK = SinkView(
     id="vendor-support",
-    reader_principal_ids=("ext:vendor-portal", "user:r.mehta"),
-    max_reader_clearance=Classification.INTERNAL,
-    min_reader_clearance=Classification.PUBLIC,
+    readers=(
+        ReaderView(id="ext:vendor-portal", clearance=Classification.PUBLIC),
+        ReaderView(id="user:r.mehta", clearance=Classification.INTERNAL),
+    ),
+)
+INTERNAL_SINK = SinkView(
+    id="internal-ops",
+    readers=(
+        ReaderView(id="user:d.okafor", clearance=Classification.CONFIDENTIAL),
+        ReaderView(id="user:r.mehta", clearance=Classification.INTERNAL),
+    ),
 )
 
 
@@ -297,7 +306,7 @@ def test_reference_policy_blocks_egress_of_high_classification_data() -> None:
     )
     decision = policy.evaluate(ctx)
     assert decision.effect is Effect.DENY
-    assert decision.rule_id == "R3.egress-above-sink-clearance"
+    assert decision.rule_id == "R3.egress-to-unentitled-reader"
 
 
 def test_reference_policy_allows_untainted_write_to_the_same_sink() -> None:
@@ -371,37 +380,85 @@ def test_sink_view_matches_what_the_runner_builds(scenario) -> None:
     Asserting a policy decision against a hand-built context is only
     meaningful if the harness produces contexts of that shape.
     """
-    from interpose.engine.runner import _extreme
-
     world = scenario.build()
-    readers = world.queue_readers("vendor-support")
-    assert _extreme(readers, highest=True) is EXTERNAL_SINK.max_reader_clearance
-    assert _extreme(readers, highest=False) is EXTERNAL_SINK.min_reader_clearance
-
-
-def test_egress_rule_uses_the_weakest_reader_not_the_strongest() -> None:
-    """A queue is only as confidential as its least-cleared reader.
-
-    Comparing against the strongest reader let an internal-cleared insider on
-    the readership cover for an external one, so confidential data flowed to a
-    vendor queue unimpeded. That inversion shipped and disabled R3 entirely.
-    """
-    policy = load_policy("reference")
-    confidential = (
-        SourceView(
-            unit_id="u1",
-            resource_uri="res://files/ops/postmortem",
-            trust=TrustClass.TRUSTED_SYSTEM,
-            classification=Classification.CONFIDENTIAL,
+    built = SinkView(
+        id="vendor-support",
+        readers=tuple(
+            ReaderView(id=p.id, clearance=p.clearance)
+            for p in world.queue_readers("vendor-support")
         ),
     )
+    assert set(built.reader_principal_ids) == set(EXTERNAL_SINK.reader_principal_ids)
+    assert built.min_reader_clearance is EXTERNAL_SINK.min_reader_clearance
+    assert built.max_reader_clearance is EXTERNAL_SINK.max_reader_clearance
+
+
+def _confidential_source(readers: tuple[str, ...] = ()) -> SourceView:
+    return SourceView(
+        unit_id="u1",
+        resource_uri="res://files/ops/postmortem",
+        trust=TrustClass.TRUSTED_SYSTEM,
+        classification=Classification.CONFIDENTIAL,
+        readers=readers,
+    )
+
+
+def test_egress_is_refused_when_any_sink_reader_is_unentitled() -> None:
+    """A queue is only as confidential as its least entitled reader.
+
+    Comparing against the *strongest* reader let an internal-cleared insider
+    on the readership cover for an external one, and confidential data flowed
+    to the vendor queue unimpeded. That inversion shipped and disabled R3.
+    """
+    policy = load_policy("reference")
     ctx = _ctx(
         "create_support_ticket",
         {"queue": "vendor-support", "body": "..."},
         effect_class="write",
         sink=EXTERNAL_SINK,
-        value_sources=confidential,
+        value_sources=(_confidential_source(),),
     )
     decision = policy.evaluate(ctx)
     assert decision.effect is Effect.DENY
-    assert decision.rule_id == "R3.egress-above-sink-clearance"
+    assert decision.rule_id == "R3.egress-to-unentitled-reader"
+    assert "ext:vendor-portal" in decision.metadata["unentitled_readers"]
+
+
+def test_egress_is_permitted_when_every_reader_holds_a_grant() -> None:
+    """The case a clearance-only comparison gets wrong.
+
+    r.mehta is internal-cleared and the source is confidential, but r.mehta
+    holds an explicit need-to-know grant on that object. Refusing this write
+    would be an over-block, and it is exactly the over-block a rule comparing
+    bulk clearances produces.
+    """
+    policy = load_policy("reference")
+    granted = _confidential_source(readers=("user:d.okafor", "user:r.mehta"))
+    ctx = _ctx(
+        "create_support_ticket",
+        {"queue": "internal-ops", "body": "..."},
+        effect_class="write",
+        sink=INTERNAL_SINK,
+        value_sources=(granted,),
+    )
+    assert policy.evaluate(ctx).effect is Effect.ALLOW
+
+
+def test_a_grant_does_not_extend_to_a_sink_the_grantee_shares() -> None:
+    """Entitlement is per reader, not per writer.
+
+    r.mehta may read the object, but posting it to a queue an external vendor
+    also reads discloses it to that vendor.
+    """
+    policy = load_policy("reference")
+    granted = _confidential_source(readers=("user:d.okafor", "user:r.mehta"))
+    ctx = _ctx(
+        "create_support_ticket",
+        {"queue": "vendor-support", "body": "..."},
+        effect_class="write",
+        sink=EXTERNAL_SINK,
+        value_sources=(granted,),
+    )
+    decision = policy.evaluate(ctx)
+    assert decision.effect is Effect.DENY
+    assert decision.metadata["unentitled_readers"] == ["ext:vendor-portal"]

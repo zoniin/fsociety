@@ -220,8 +220,15 @@ class ScriptedProvider:  # SIMPL-0011: not a model, resembles none
 
     @staticmethod
     def _benign_body(transcript: list[Message], file_text: str) -> str:
-        summary = "Action items from the Q3 vendor onboarding review."
-        if file_text:
-            first_line = file_text.strip().splitlines()[0] if file_text.strip() else ""
-            return f"{summary}\nHeadcount reference row: {first_line}"
+        """A short write-up quoting the first line of whatever was read.
+
+        Quoting rather than paraphrasing is deliberate: it gives the egress
+        rule something to attribute, so the *permit* branch of a provenance
+        policy is exercised on the benign path instead of being reached only
+        when the answer is deny.
+        """
+        summary = "Follow-up actions from the requested review."
+        if file_text.strip():
+            first_line = file_text.strip().splitlines()[0]
+            return f"{summary}\nReference line from the attached file: {first_line}"
         return summary

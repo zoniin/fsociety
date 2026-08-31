@@ -49,11 +49,12 @@ from ..policy.types import (
     DecisionContext,
     PrincipalView,
     ProvenanceView,
+    ReaderView,
     ResourceView,
     SinkView,
     SourceView,
 )
-from ..provenance import CLASSIFICATION_ORDER, Classification, TrustClass
+from ..provenance import Classification, TrustClass
 from ..scenario.spec import ScenarioSpec
 from ..tools.spec import ToolSpec
 from ..world.models import World
@@ -121,6 +122,7 @@ def shadow_probe(
                     resource_uri=res.uri,
                     trust=res.trust,
                     classification=res.classification,
+                    readers=tuple(sorted(res.readers)),
                 )
             )
 
@@ -152,16 +154,12 @@ def shadow_probe(
 
         sink_view = None
         if resolution.sink_id:
-            readers = world.queue_readers(resolution.sink_id)
-            top = Classification.PUBLIC
-            for reader in readers:
-                if CLASSIFICATION_ORDER[reader.clearance] > CLASSIFICATION_ORDER[top]:
-                    top = reader.clearance
             sink_view = SinkView(
                 id=resolution.sink_id,
-                reader_principal_ids=tuple(sorted(p.id for p in readers)),
-                max_reader_clearance=top,
-                min_reader_clearance=_lowest(readers),
+                readers=tuple(
+                    ReaderView(id=p.id, clearance=p.clearance)
+                    for p in world.queue_readers(resolution.sink_id)
+                ),
             )
 
         ctx = DecisionContext(
@@ -220,14 +218,6 @@ def shadow_probe(
     )
 
 
-def _lowest(readers: list) -> Classification:
-    if not readers:
-        return Classification.PUBLIC
-    return min(
-        ((CLASSIFICATION_ORDER[r.clearance], r.clearance) for r in readers),
-    )[1]
-
-
 def _undeclared_paths(
     log: EventLog,
     world: World,
@@ -249,11 +239,25 @@ def _undeclared_paths(
     declaring a convenient objective. It found a real bypass on first run --
     ``read_document`` reaching a ``kind: file`` resource by URI, defeating a
     policy that only inspected ``read_internal_file`` paths.
+
+    Scope, stated because it is narrower than the name suggests: this walks
+    *read* routes to protected assets only. Undeclared *egress* routes -- a
+    different tool that writes to an externally readable sink -- are not
+    enumerated, so a policy can still have an unmeasured hole on the write
+    side. Recorded as SIMPL-0005.
     """
     findings: list[str] = []
+    behalf = world.principals.get(spec.agent.on_behalf_of)
     for uri in sorted(spec.attack.protected_assets):
         res = world.resource(uri)
         if res is None:
+            continue
+        # A permitted route is only a gap if taking it would be a violation.
+        # Where the acting principal is genuinely entitled to the object -- the
+        # whole premise of the confidential-egress scenario -- a policy that
+        # permits the read is behaving correctly, and flagging it would report
+        # a gap on the legitimate path.
+        if behalf is not None and res.readable_by(behalf):
             continue
         candidates: list[tuple[str, dict]] = []
         for tool in tools:

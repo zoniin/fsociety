@@ -283,7 +283,7 @@ something about models. If a result carries `deterministic: true`, it does not.
 
 ## SIMPL-0012 — The attack corpus is static and small
 
-- **code_ref**: `scenarios/indirect-document-injection/untrusted/`
+- **code_ref**: `scenarios/*/untrusted/`
 - **status**: open · **hidden_by**: scope · **bias_direction**: overstates policy strength
 
 **What that hides.** Adaptive, defense-aware attacks — which previously broke
@@ -295,3 +295,66 @@ the corpus saturates.
 instances rotate while results stay reproducible; a versioned corpus with a
 held-out split, once there is a community large enough to sustain the
 governance that requires.
+
+---
+
+## SIMPL-0013 — Entitlement is a flat reader list, not an access-control system
+
+- **code_ref**: `src/interpose/policy/types.py::ReaderView.entitled_to`
+- **status**: open · **hidden_by**: scope · **bias_direction**: overstates policy strength
+- **affects**: rule R3 in `reference-least-privilege`, and any adapter that mirrors it
+
+**What we do.** A resource carries an explicit list of principal ids that may
+read it. If the list is empty, entitlement falls back to comparing clearance
+levels. R3 asks, for each tainted source and each reader of the sink, whether
+that reader appears on that source's list.
+
+**What that hides.** Real authorization is not a flat list. Groups, nested
+groups, roles, inherited folder ACLs, sharing links, delegated access, time-
+bounded grants, and break-glass all resolve to an effective permission through
+machinery this model does not have. Every one of those is a place where the
+*effective* reader set differs from the declared one, and the gap between them
+is where a large share of real data exposure lives — a principal who is not on
+the list but is in a group that is.
+
+The flat list also makes the reference policy's job easier than it should be.
+Entitlement here is a lookup that cannot be stale, cannot be misconfigured, and
+cannot disagree with a second system of record.
+
+**Path to fidelity.** Group and role indirection in the world model, then a
+scenario where the declared reader set and the effective reader set diverge.
+That is a natural pairing with the misclassified-metadata scenario on the
+roadmap, and probably the same pull request.
+
+---
+
+## SIMPL-0014 — The policy freeze is a self-attestation, not a trusted timestamp
+
+- **code_ref**: `policy-freeze.json`, `src/interpose/challenge.py::check_freeze`
+- **status**: open · **hidden_by**: governance · **bias_direction**: overstates the ordering guarantee
+- **affects**: the anti-circularity argument in `PROTOCOL.md` and `CHALLENGE.md`
+
+**What we do.** `policy-freeze.json` records the content digest of every
+published policy. It is committed, and `interpose freeze --check` runs in CI, so
+editing a frozen policy without deliberately re-freezing turns the build red.
+The claim built on it is that git commit order proves a policy predates the
+attacks that score it.
+
+**What that hides.** Everything here is attested by the same party the
+mechanism is supposed to constrain. A maintainer can rewrite the branch, re-date
+commits, or re-freeze and re-run in a single push; nothing in the repository
+distinguishes that from honest history. Commit timestamps are author-supplied
+and trivially forged. The freeze protects against *drift* — the realistic
+failure, where someone edits a policy and forgets what it invalidates — and not
+at all against a determined author, which is the case the circularity objection
+is actually about.
+
+So the ordering rule is a discipline the maintainer submits to publicly, not a
+guarantee a reader can verify unaided. It should be read as the former.
+
+**Path to fidelity.** Signed tags with a published key, an external timestamp
+(an OpenTimestamps proof or the digest posted somewhere append-only), and
+challenge results reproduced by CI from a checkout of the tagged revision rather
+than the working tree. None of that helps until a third party actually runs a
+challenge — which is the load-bearing gap, and no amount of cryptography closes
+it.

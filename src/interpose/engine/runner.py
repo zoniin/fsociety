@@ -56,11 +56,12 @@ from ..policy.types import (
     PrincipalView,
     PriorDecision,
     ProvenanceView,
+    ReaderView,
     ResourceView,
     SinkView,
     SourceView,
 )
-from ..provenance import CLASSIFICATION_ORDER, Classification, ProvenanceIndex, Source
+from ..provenance import ProvenanceIndex, Source
 from ..providers.base import AgentProvider, Message
 from ..scenario.loader import LoadedScenario
 from ..scenario.spec import BenignTask, CallPattern
@@ -227,6 +228,7 @@ class Runner:
         self.transcript.append(Message(role="user", content=prompt))
 
         turn = 0
+        finished_naturally = False
         while turn < spec.agent.max_turns:
             turn += 1
             agent_turn = provider.respond(list(self.transcript), self.tools)
@@ -240,11 +242,13 @@ class Runner:
                 )
 
             if agent_turn.is_final:
+                finished_naturally = True
                 break
 
             for call in agent_turn.calls:
                 self._dispatch(log, world, turn, call.tool, call.arguments)
 
+        truncated = not finished_naturally
         world_after = world.digest()
         self._run_detectors(log, world)
         probe = shadow_probe(log, world, spec, policy, self.tools)
@@ -255,6 +259,7 @@ class Runner:
             task_kind=task_kind,
             benign_task=self.cfg.benign_task,
             probe=probe,
+            turn_limit_reached=truncated,
         )
         for check, value, detail in outcome.as_events():
             log.emit(OutcomeEvaluated, check=check, value=value, detail=detail)
@@ -263,6 +268,7 @@ class Runner:
             verdict=outcome.verdict,
             turns=turn,
             world_digest_final=world_after,
+            turn_limit_reached=truncated,
         )
 
         return RunRecord(
@@ -485,12 +491,12 @@ class Runner:
 
         sink_view = None
         if sink_id:
-            readers = world.queue_readers(sink_id)
             sink_view = SinkView(
                 id=sink_id,
-                reader_principal_ids=tuple(sorted(p.id for p in readers)),
-                max_reader_clearance=_extreme(readers, highest=True),
-                min_reader_clearance=_extreme(readers, highest=False),
+                readers=tuple(
+                    ReaderView(id=p.id, clearance=p.clearance)
+                    for p in world.queue_readers(sink_id)
+                ),
             )
 
         return DecisionContext(
@@ -502,8 +508,8 @@ class Runner:
                 effect_class=tool.effect_class,
             ),
             provenance=ProvenanceView(
-                value_sources=tuple(_views(value_sources)),
-                context_sources=tuple(_views(context_sources)),
+                value_sources=tuple(_views(value_sources, world)),
+                context_sources=tuple(_views(context_sources, world)),
             ),
             resource=resource_view,
             sink=sink_view,
@@ -555,28 +561,26 @@ class Runner:
                         )
 
 
-def _extreme(readers: list, *, highest: bool) -> Classification:
-    """Highest or lowest clearance among a sink readership.
+def _views(sources: frozenset[Source], world: World) -> list[SourceView]:
+    """Project labelled sources into what a policy is allowed to see.
 
-    A sink with no readers is treated as PUBLIC in both directions: nobody can
-    read it, so nothing is disclosed, but nothing may be assumed either.
+    The resource's reader allowlist travels with the label. Without it an
+    egress rule can only compare bulk clearances, and cannot tell a leak from
+    a write whose readers all hold explicit need-to-know grants.
     """
-    if not readers:
-        return Classification.PUBLIC
-    ranks = [(CLASSIFICATION_ORDER[r.clearance], r.clearance) for r in readers]
-    return (max(ranks) if highest else min(ranks))[1]
-
-
-def _views(sources: frozenset[Source]) -> list[SourceView]:
-    return [
-        SourceView(
-            unit_id=s.unit_id,
-            resource_uri=s.resource_uri,
-            trust=s.trust,
-            classification=s.classification,
+    out: list[SourceView] = []
+    for s in sorted(sources, key=lambda s: s.unit_id):
+        res = world.resource(s.resource_uri)
+        out.append(
+            SourceView(
+                unit_id=s.unit_id,
+                resource_uri=s.resource_uri,
+                trust=s.trust,
+                classification=s.classification,
+                readers=tuple(sorted(res.readers)) if res else (),
+            )
         )
-        for s in sorted(sources, key=lambda s: s.unit_id)
-    ]
+    return out
 
 
 def _safe_args(arguments: dict[str, Any]) -> dict[str, Any]:

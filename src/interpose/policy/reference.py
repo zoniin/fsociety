@@ -18,12 +18,18 @@ This is the rule that distinguishes this policy from a path deny-list. It
 permits the quarterly headcount file and refuses the payroll export *for
 reasons about the objects*, not about their names, so the benign task survives.
 
-**R3 -- egress against provenance.** A write is refused when data derived from
-sources classified above what the destination readership is entitled to would
-land in that destination. This is Biba-style integrity read backwards for
-confidentiality, and it is the rule that catches the second half of an
-exfiltration: reading a file you may read, then posting it somewhere you may
-not post it.
+**R3 -- egress against provenance.** A write is refused when any reader of the
+destination could not have read a source the written data derives from. This
+is the rule that catches the second half of an exfiltration, and it is the one
+that matters most: the interesting case is not reading a file you may not read,
+it is reading a file you *may* read and then posting it somewhere you may not
+post it. R2 cannot see that case at all.
+
+The comparison is per reader and per source, deliberately. Aggregating over
+either side loses the answer: comparing against the readership's strongest
+clearance lets an insider cover for an outsider, and comparing against bulk
+clearances alone refuses writes whose readers hold explicit need-to-know
+grants. Both of those shipped before review.
 
 Known limits, because this policy is published and someone will deploy it:
 
@@ -46,7 +52,6 @@ anything else.
 
 from __future__ import annotations
 
-from ..provenance import CLASSIFICATION_ORDER
 from .types import ALLOW, DENY, Decision, DecisionContext
 
 __all__ = ["ReferenceLeastPrivilege"]
@@ -96,26 +101,29 @@ class ReferenceLeastPrivilege:
                     metadata={"resource": resource.uri, "classification": resource.classification.value},
                 )
 
-        # R3 -- egress: do not let high-classification data reach a low-clearance sink.
+        # R3 -- egress: every reader of the sink must be entitled to every
+        # source the written data derives from.
         sink = ctx.sink
         if sink is not None and ctx.action.effect_class in ("write", "irreversible"):
-            carried = ctx.provenance.max_value_classification()
-            if CLASSIFICATION_ORDER[carried] > sink.reader_rank():
-                sources = ", ".join(s.resource_uri for s in ctx.provenance.value_sources) or "unknown"
-                return Decision(
-                    effect=DENY,
-                    rule_id="R3.egress-above-sink-clearance",
-                    reason=(
-                        f"write carries {carried.value} data (from {sources}) into sink "
-                        f"{sink.id}, whose least-cleared reader is "
-                        f"{sink.min_reader_clearance.value}"
-                    ),
-                    metadata={
-                        "sink": sink.id,
-                        "carried_classification": carried.value,
-                        "sink_min_reader_clearance": sink.min_reader_clearance.value,
-                    },
-                )
+            for source in ctx.provenance.value_sources:
+                unentitled = sink.unentitled_readers(source)
+                if unentitled:
+                    who = ", ".join(r.id for r in unentitled)
+                    return Decision(
+                        effect=DENY,
+                        rule_id="R3.egress-to-unentitled-reader",
+                        reason=(
+                            f"write carries {source.classification.value} data from "
+                            f"{source.resource_uri} into sink {sink.id}, which is readable "
+                            f"by {who} -- not entitled to that source"
+                        ),
+                        metadata={
+                            "sink": sink.id,
+                            "source": source.resource_uri,
+                            "carried_classification": source.classification.value,
+                            "unentitled_readers": [r.id for r in unentitled],
+                        },
+                    )
 
         return Decision(
             effect=ALLOW,

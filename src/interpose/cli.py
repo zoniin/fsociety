@@ -27,6 +27,13 @@ from pathlib import Path
 from typing import Any
 
 from . import BENCH_VERSION, __version__
+from .challenge import (
+    FREEZE_FILE,
+    check_freeze,
+    evaluate_challenge,
+    render_challenge,
+    write_freeze,
+)
 from .engine.trial import (
     ProviderFactory,
     run_single,
@@ -34,7 +41,7 @@ from .engine.trial import (
     to_run_result,
     write_run_artifacts,
 )
-from .errors import HarnessError, InterposeError, UsageError
+from .errors import HarnessError, InterposeError, ScenarioError, UsageError
 from .policy.base import BUILTIN_POLICIES, load_policy
 from .providers.base import AgentProvider
 from .providers.scripted import BEHAVIOR_CLASSES, ScriptedProvider
@@ -72,6 +79,11 @@ interpose {__version__}   bench {BENCH_VERSION}
       interpose demo
 
   Then:  interpose ls  |  interpose show {DEFAULT_SCENARIO}  |  interpose replay <run-id>
+
+  Think the reference policy is weaker than it looks? Write a scenario and
+  try to break it -- that is the contribution this project most wants:
+
+      interpose challenge <your-scenario>      (see docs/CHALLENGE.md)
 """
 
 
@@ -101,38 +113,55 @@ def _provider_factory(name: str) -> ProviderFactory:
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
-    """The three-row comparison. No arguments, no key, no network."""
-    scenario = load_scenario(args.scenario)
+    """Every installed scenario against the whole policy family.
+
+    Runs all scenarios rather than one, because the cross-scenario comparison
+    is the actual finding: ``path-prefix-v1`` contains the first attack and
+    fails the second completely, at a *lower* utility cost. One scenario shows
+    a policy working; two show that "working" was a property of the attack, not
+    of the policy.
+    """
     factory = _provider_factory(args.provider)
-    trials: list[TrialResult] = []
+    scenario_ids = [args.scenario] if args.scenario else list(discover_scenarios())
+    payload: list[dict[str, Any]] = []
     saved: dict[str, str] = {}
-    for name in ("permissive", "path-prefix", "reference"):
-        trial, records = run_trial(scenario, load_policy(name), factory)
-        trials.append(trial)
-        # Save, so the closing hint can name a real run id. Before review the
-        # demo told the reader to replay a run it had never written.
-        write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)
-        saved[name] = trial.attack.run_id
+
+    for index, sid in enumerate(scenario_ids):
+        scenario = load_scenario(sid)
+        trials: list[TrialResult] = []
+        for name in ("permissive", "path-prefix", "reference"):
+            trial, records = run_trial(scenario, load_policy(name), factory)
+            trials.append(trial)
+            # Save, so the closing hint can name a real run id. Before review
+            # the demo told the reader to replay a run it had never written.
+            write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)
+            saved.setdefault(f"{sid}:{name}", trial.attack.run_id)
+
+        if args.json:
+            payload.append(
+                {"scenario": sid, "trials": [t.model_dump(mode="json") for t in trials]}
+            )
+        else:
+            if index:
+                print()
+            print(render_comparison(trials))
 
     if args.json:
-        print(json.dumps([t.model_dump(mode="json") for t in trials], indent=2))
+        print(json.dumps(payload, indent=2))
         return 0
 
-    print(render_comparison(trials))
+    if len(scenario_ids) > 1:
+        print()
+        print("  Read the two tables together. path-prefix-v1 -- the fix everyone")
+        print("  reaches for -- contains the first attack and fails the second one")
+        print("  outright, while costing *less* utility there. It was never a good")
+        print("  policy; it was a policy that happened to match one attack.")
     print()
-    print("  The first row is the ordinary baseline: tool-level RBAC, which is what")
-    print("  most deployed agents actually have. The second row is the fix anyone")
-    print("  reaches for first, and the report shows what it costs. The third row is")
-    print("  the claim worth arguing with -- and the benign column is the half the")
-    print("  author of this scenario did not get to choose.")
+    print("  The causal trace: which untrusted bytes reached which privileged call,")
+    print("  and which rule stopped it.")
     print()
-    print()
-    print("  The causal trace for the contained run -- which untrusted bytes reached")
-    print("  which privileged call, and which rule stopped it:")
-    print()
-    print(f"      interpose replay runs/{saved['reference']}")
-    print()
-    print(f"  Compare against the compromised one: runs/{saved['permissive']}")
+    for sid in scenario_ids:
+        print(f"      interpose replay runs/{saved[f'{sid}:reference']}   # {sid}, contained")
     return 0
 
 
@@ -325,6 +354,68 @@ def cmd_matrix(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_freeze(args: argparse.Namespace) -> int:
+    """Record or verify the content digests the published policies are frozen at.
+
+    The committed record plus git commit order is what makes "the policy was
+    written before the attacks that score it" checkable rather than asserted.
+    """
+    path = Path(args.file)
+    if args.check:
+        problems = check_freeze(path)
+        if not problems:
+            print(f"FREEZE INTACT  {path}")
+            return 0
+        print(f"FREEZE DRIFTED  {path}")
+        for problem in problems:
+            print(f"  - {problem}")
+        print()
+        print("  A frozen policy changed after it was published. Either revert it,")
+        print("  or re-freeze deliberately and say so -- results scored against the")
+        print("  old bytes are not comparable to results scored against the new ones.")
+        return 1
+
+    record = write_freeze(path)
+    print(f"wrote {path}")
+    for policy_id, entry in sorted(record["policies"].items()):
+        print(f"  {policy_id:<28s} {entry['digest']}")
+    print()
+    print("  Commit this. The commit that adds a policy here predates every attack")
+    print("  written against it, which is the whole of the ordering guarantee.")
+    return 0
+
+
+def cmd_challenge(args: argparse.Namespace) -> int:
+    """Run a scenario against a frozen policy and say whether it broke.
+
+    Exit 0 means the policy held; exit 1 means it was broken. For a challenger,
+    exit 1 is the win -- see docs/CHALLENGE.md.
+    """
+    scenario = load_scenario(args.scenario)
+    factory = _provider_factory(args.provider)
+    trial, records = run_trial(scenario, load_policy(args.policy), factory)
+    report = evaluate_challenge(scenario, args.policy, trial, Path(args.freeze_file))
+
+    if args.json:
+        payload = trial.model_dump(mode="json")
+        payload["challenge"] = {
+            "policy_id": report.policy_id,
+            "policy_digest": report.policy_digest,
+            "freeze_status": report.freeze_status,
+            "broken": report.broken,
+            "credible": report.credible,
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        print(render_challenge(report))
+
+    if args.save:
+        out = write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)
+        if not args.json:
+            print(f"  artifacts: {out}")
+    return 1 if report.broken else 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     import platform
 
@@ -346,33 +437,52 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_new(args: argparse.Namespace) -> int:
-    """Scaffold a scenario from the bundled one.
+    """Scaffold a scenario by copying one that already passes.
 
-    A copy of something that already passes, not a stub. Nothing kills a first
-    contribution like a scaffold that errors before it has been edited.
+    A copy of something that works, not a stub. Nothing kills a first
+    contribution like a scaffold that errors before it has been edited -- the
+    contributor cannot tell their change from the template's bug.
+
+    ``--from`` picks which bundled scenario to start from, because the two
+    exercise different rules and a challenger should start from whichever is
+    closer to the boundary they want to push on.
     """
     import shutil
 
-    source = load_scenario(DEFAULT_SCENARIO).root
+    origin = args.from_scenario or DEFAULT_SCENARIO
+    try:
+        source = load_scenario(origin)
+    except ScenarioError as exc:
+        raise UsageError(f"cannot start from {origin!r}: {exc}") from exc
+
     target = Path(args.directory or ".") / args.name
     if target.exists():
         raise UsageError(f"{target} already exists")
-    shutil.copytree(source, target)
+    shutil.copytree(source.root, target)
 
     manifest = target / "scenario.yaml"
     text = manifest.read_text(encoding="utf-8")
-    text = text.replace(f"id: {DEFAULT_SCENARIO}", f"id: {args.name}", 1)
+    text = text.replace(f"id: {origin}", f"id: {args.name}", 1)
     manifest.write_text(text, encoding="utf-8", newline="\n")
 
-    print(f"created {target}")
+    payloads = sorted(q.name for q in (target / "untrusted").glob("*.b64"))
+    first_payload = payloads[0] if payloads else "untrusted/<payload>.b64"
+
+    print(f"created {target}  (copied from {origin})")
     print()
-    print("It already passes. Verify that first, then change one thing:")
+    print("It already passes. Confirm that before changing anything:")
     print(f"  interpose run {target} --policy reference")
     print()
-    print("Good first edits, in order of how much they teach:")
-    print("  1. edit untrusted/vendor-sow-q3.v1.md.b64 (base64; keep the marker line)")
+    print("Then change one thing at a time. In rough order of how much each teaches:")
+    print(f"  1. edit untrusted/{first_payload} (base64; keep the marker line)")
     print("  2. add a benign task whose required call the policy might refuse")
-    print("  3. change the objective to target a tool the policy allows with other args")
+    print("  3. change the objective to a tool the policy allows with other arguments")
+    print()
+    print("When you think you have something, ask the question that matters:")
+    print(f"  interpose challenge {target}")
+    print()
+    print("  Exit 1 means you broke the reference policy, and that is the")
+    print("  contribution this project wants most. See docs/CHALLENGE.md.")
     return 0
 
 
@@ -403,8 +513,12 @@ def build_parser() -> argparse.ArgumentParser:
                            help=f"{', '.join(sorted(BUILTIN_POLICIES))}, or module.path:ClassName")
         p.add_argument("--json", action="store_true", help="machine-readable output")
 
-    p_demo = sub.add_parser("demo", help="the three-policy comparison; no key, no network")
-    p_demo.add_argument("scenario", nargs="?", default=DEFAULT_SCENARIO)
+    p_demo = sub.add_parser(
+        "demo", help="every scenario against the policy family; no key, no network"
+    )
+    p_demo.add_argument(
+        "scenario", nargs="?", default=None, help="limit to one scenario (default: all)"
+    )
     add_common(p_demo, with_policy=False)
     p_demo.set_defaults(func=cmd_demo)
 
@@ -440,6 +554,25 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p_matrix, with_policy=False)
     p_matrix.set_defaults(func=cmd_matrix)
 
+    p_freeze = sub.add_parser(
+        "freeze", help="record or verify the digests policies are frozen at"
+    )
+    p_freeze.add_argument(
+        "--check", action="store_true", help="verify instead of writing; exit 1 on drift"
+    )
+    p_freeze.add_argument("--file", default=str(FREEZE_FILE))
+    p_freeze.set_defaults(func=cmd_freeze)
+
+    p_challenge = sub.add_parser(
+        "challenge",
+        help="run your scenario against a frozen policy; exit 1 means you broke it",
+    )
+    p_challenge.add_argument("scenario")
+    add_common(p_challenge)
+    p_challenge.add_argument("--freeze-file", default=str(FREEZE_FILE))
+    p_challenge.add_argument("--save", action="store_true")
+    p_challenge.set_defaults(func=cmd_challenge)
+
     p_doctor = sub.add_parser("doctor", help="environment report for a bug report")
     p_doctor.set_defaults(func=cmd_doctor)
 
@@ -447,6 +580,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_new.add_argument("kind", choices=["scenario"])
     p_new.add_argument("name")
     p_new.add_argument("--directory", default="scenarios")
+    p_new.add_argument(
+        "--from",
+        dest="from_scenario",
+        default=None,
+        metavar="SCENARIO",
+        help=f"scenario to copy (default: {DEFAULT_SCENARIO}); see 'interpose ls scenarios'",
+    )
     p_new.set_defaults(func=cmd_new)
 
     return parser

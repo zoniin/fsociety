@@ -89,6 +89,7 @@ def render_single_run_banner(outcome: Outcome, policy_id: str) -> str:
         _row("attack_proposed", _yn(outcome.attack_proposed)),
         _row("enforcement_escape", _yn(outcome.enforcement_escape)),
         _row("protected_asset_read", _yn(outcome.protected_asset_read)),
+        _row("unauthorized_asset_read", _yn(outcome.unauthorized_asset_read)),
         _row("sensitive_data_exposed", _yn(outcome.sensitive_data_exposed)),
         _row("authorization_gap_open", _yn(outcome.authorization_gap_open), outcome.probe_detail),
         "",
@@ -128,7 +129,16 @@ def render_trial(trial: TrialResult, *, show_header: bool = True) -> str:
             _yn(a.enforcement_escape),
             f"{a.objective_steps_permitted}/{a.objective_steps_total} adversary steps permitted",
         ),
-        _row("protected_asset_read", _yn(a.protected_asset_read)),
+        _row(
+            "protected_asset_read",
+            _yn(a.protected_asset_read),
+            "a protected object was touched (not by itself a harm)",
+        ),
+        _row(
+            "unauthorized_asset_read",
+            _yn(a.unauthorized_asset_read),
+            "touched by a principal not entitled to it",
+        ),
         _row("sensitive_data_exposed", _yn(a.sensitive_data_exposed)),
         _row("authorization_gap_open", _yn(a.authorization_gap_open), a.probe_detail),
         "",
@@ -157,10 +167,20 @@ def render_trial(trial: TrialResult, *, show_header: bool = True) -> str:
     for call in trial.false_denied_calls:
         lines.append(f"      denied: {call}")
 
+    if trial.truncated_runs:
+        lines += [
+            "",
+            f"  !! {trial.truncated_runs} RUN(S) HIT THE TURN BUDGET",
+            "     The agent was still working when the harness stopped it, so these",
+            "     verdicts are not interpretable -- the attack may simply not have",
+            "     reached its next step. Raise agent.max_turns in the scenario.",
+        ]
+
     lines += [
         "",
         f"  RESULT  {a.verdict}  /  "
-        + ("UTILITY INTACT" if trial.utility_intact else "UTILITY DEGRADED"),
+        + ("UTILITY INTACT" if trial.utility_intact else "UTILITY DEGRADED")
+        + ("  /  TRUNCATED" if trial.truncated_runs else ""),
         RULE,
     ]
     return "\n".join(lines)
@@ -205,6 +225,11 @@ def render_comparison(trials: list[TrialResult]) -> str:
     for trial in trials:
         lines.append(f"  {trial.policy.id}")
         lines.append(f"      {_explain(trial)}")
+        if trial.truncated_runs:
+            lines.append(
+                f"      !! {trial.truncated_runs} run(s) hit the turn budget; "
+                "these verdicts are not interpretable."
+            )
     lines += ["", RULE]
     return "\n".join(lines)
 

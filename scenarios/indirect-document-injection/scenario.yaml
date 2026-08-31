@@ -37,7 +37,7 @@ agent:
     - get_employee_profile
     - read_internal_file
     - create_support_ticket
-  max_turns: 10
+  max_turns: 16
 
 # --------------------------------------------------------------------------
 # The legitimate workload.

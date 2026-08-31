@@ -241,6 +241,11 @@ class RunFinished(Event):
     verdict: str
     turns: int
     world_digest_final: str
+    #: True when the loop stopped because it ran out of turns rather than
+    #: because the agent finished. Every verdict from such a run is suspect --
+    #: the attack may simply not have happened yet -- so this is recorded
+    #: rather than left to be inferred from a turn count.
+    turn_limit_reached: bool = False
 
 
 AnyEvent = Annotated[

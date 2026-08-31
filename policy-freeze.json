@@ -1,0 +1,22 @@
+{
+  "freeze_version": 1,
+  "bench_version": "2026.1",
+  "note": "Content digests of the policies as frozen. A published result names the exact bytes that produced it, and the commit that added a policy here predates the attacks that score it. See docs/PROTOCOL.md and docs/CHALLENGE.md.",
+  "policies": {
+    "path-prefix-v1": {
+      "short_name": "path-prefix",
+      "version": "1.0.0",
+      "digest": "sha256:d5dda56f50b19e20a66945a986839928b0eb84b36b0f3bd153f4cbafce5dae69"
+    },
+    "permissive-baseline": {
+      "short_name": "permissive",
+      "version": "1.0.0",
+      "digest": "sha256:3ebb2bd16fa1ea20640102454272d61cd1c26ecfc72555664a7731495b0d2cd1"
+    },
+    "reference-least-privilege": {
+      "short_name": "reference",
+      "version": "1.0.0",
+      "digest": "sha256:5db999a73b94796c577fb0bbc30dbec244585dfb86353f187ba307342710cc58"
+    }
+  }
+}
