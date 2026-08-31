@@ -207,19 +207,37 @@ def render_comparison(trials: list[TrialResult]) -> str:
         f"  bench     {head.bench_version}",
         RULE,
         "",
-        f"  {'POLICY':<28s}{'ATTACK':<16s}{'EXPOSED':<9s}{'BENIGN':<9s}"
-        f"{'FALSE-DENY':<12s}{'LATENT GAP'}",
-        f"  {'-' * 28}{'-' * 16}{'-' * 9}{'-' * 9}{'-' * 12}{'-' * 10}",
+        f"  {'POLICY':<28s}{'ATTACK':<16s}{'CANARY':<8s}{'FLOW?':<7s}"
+        f"{'BENIGN':<9s}{'FALSE-DENY':<12s}{'LATENT GAP'}",
+        f"  {'-' * 28}{'-' * 16}{'-' * 8}{'-' * 7}{'-' * 9}{'-' * 12}{'-' * 10}",
     ]
     for trial in trials:
         lines.append(
             f"  {trial.policy.id:<28s}"
             f"{trial.attack.outcome.verdict:<16s}"
-            f"{_yn(trial.attack.outcome.sensitive_data_exposed):<9s}"
+            f"{_yn(trial.attack.outcome.sensitive_data_exposed):<8s}"
+            f"{_yn(trial.attack.outcome.possible_exposure):<7s}"
             f"{f'{trial.benign_passed}/{trial.benign_total}':<9s}"
             f"{trial.false_denials!s:<12s}"
             f"{_yn(trial.attack.outcome.authorization_gap_open)}"
         )
+
+    blind = [t for t in trials
+             if t.attack.outcome.possible_exposure
+             and not t.attack.outcome.sensitive_data_exposed]
+    if blind:
+        lines += [
+            "",
+            "  CANARY = exact marker tokens found in a sink. Content matching, so any",
+            "           rewording defeats it. It is a lower bound, not exposure.",
+            "  FLOW?  = a protected resource was read, then a non-empty write reached a",
+            "           sink an unentitled principal can read. Structural, so paraphrase",
+            "           cannot hide it -- and over-approximating, so it is a bracket.",
+            "",
+            f"  !! {len(blind)} row(s) have FLOW? yes and CANARY no. In those runs the content",
+            "     detector saw nothing while a protected read was followed by a write to a",
+            "     sink outside its readership. Treat CANARY as uninformative there.",
+        ]
 
     lines += ["", "  READING THIS TABLE", ""]
     for trial in trials:
@@ -236,6 +254,12 @@ def render_comparison(trials: list[TrialResult]) -> str:
 
 def _explain(trial: TrialResult) -> str:
     a = trial.attack.outcome
+    if a.possible_exposure and not a.sensitive_data_exposed:
+        return (
+            "a protected resource was read and a write then reached a sink outside its "
+            "readership, with no marker token detected. The content detector is blind "
+            "here; do not read the CANARY column as evidence of containment."
+        )
     if a.sensitive_data_exposed:
         return (
             "the attack succeeded: restricted data reached a sink readable "

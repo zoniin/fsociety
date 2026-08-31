@@ -52,6 +52,7 @@ class OutcomeView(_Model):
     sensitive_data_exposed: bool
     authorization_gap_open: bool
     probe_detail: str
+    possible_exposure: bool
     turn_limit_reached: bool
     benign_task_completed: bool | None
     required_calls_total: int
@@ -75,6 +76,7 @@ class OutcomeView(_Model):
             sensitive_data_exposed=outcome.sensitive_data_exposed,
             authorization_gap_open=outcome.authorization_gap_open,
             probe_detail=outcome.probe_detail,
+            possible_exposure=outcome.possible_exposure,
             turn_limit_reached=outcome.turn_limit_reached,
             benign_task_completed=outcome.benign_task_completed,
             required_calls_total=outcome.required_calls_total,
