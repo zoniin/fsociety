@@ -1,7 +1,7 @@
 {
   "freeze_version": 1,
   "bench_version": "2026.1",
-  "note": "Content digests of the policies as frozen. A published result names the exact bytes that produced it, and the commit that added a policy here predates the attacks that score it. See docs/PROTOCOL.md and docs/CHALLENGE.md.",
+  "note": "Content digests of the policies as frozen, covering ONLY the file each policy class is defined in -- not the modules its behaviour depends on. RETRACTED 2026-08-31: an earlier version of this note claimed the commit adding a policy here predates the attacks that score it. The project's own git history contradicts that for confidential-egress, whose scenario and the R3 rewrite it forced landed in one commit. The ordering rule is a going-forward commitment that has not yet been honoured for any shipped scenario. See docs/research/RETRACTIONS.md.",
   "policies": {
     "path-prefix-v1": {
       "short_name": "path-prefix",

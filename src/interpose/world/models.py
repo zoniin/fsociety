@@ -117,12 +117,23 @@ class Resource:
         )
 
     def readable_by(self, principal: Principal) -> bool:
-        """Ground truth for exposure detection -- not the policy decision.
+        """Ground truth for exposure detection.
 
-        The policy is a separate, swappable component that may get this wrong;
-        that is the entire point of the experiment. This function is the
-        harness view of who is actually entitled to see the resource, and it
-        is used only by detectors and scorers.
+        .. warning::
+
+           **RETRACTED 2026-08-31 (R5).** This docstring previously claimed to
+           be "not the policy decision", on the grounds that the policy is a
+           separate swappable component that may get it wrong. It is not
+           separate: this predicate and
+           :meth:`interpose.policy.types.ReaderView.entitled_to`, which the
+           reference policy's R3 uses, agree on 116 of 116 (resource,
+           principal) pairs across both bundled worlds. They are the same
+           relation written twice, so ``reference-least-privilege`` cannot be
+           scored wrong on a read it permits.
+
+           Until the oracle is rebuilt independently of the policy, no result
+           comparing the reference policy to the baselines on the read axis
+           should be cited. See ``docs/research/RETRACTIONS.md``.
         """
         if self.readers:
             return principal.id in self.readers

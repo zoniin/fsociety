@@ -3,6 +3,15 @@
 **A regression test for the trust boundary in tool-using AI agents.**
 Deterministic, offline, no API key, no container, runs in CI in twelve seconds.
 
+> **Phase II retraction notice, 2026-08-31.** Twelve claims below and elsewhere
+> in this repository were withdrawn after adversarial review. The most important:
+> **every `CONTAINED` result this project has published holds only against a
+> client that copies file contents verbatim.** Under a client that restates the
+> same facts, `reference-least-privilege` denies nothing on any of the three
+> scenarios, and the `EXPOSED` column stops reporting the leak at the same time.
+> Read [`docs/research/RETRACTIONS.md`](docs/research/RETRACTIONS.md) before
+> quoting any number on this page.
+
 An agent reads a document. The document was uploaded by a vendor and contains
 instructions. The agent follows them and asks to read the payroll export.
 
@@ -29,11 +38,11 @@ Only the authorization layer changes.
   tool allowlist. It does the work fine. It also leaks.
 - **Row 2** is the fix everyone reaches for — deny `read_internal_file` under
   `/hr/`. It works. It also blocks the quarterly headcount file the operations
-  team reads every week, *and* it leaves a latent gap: the harness finds a route
-  to the same object through a tool the policy never inspects, and says so. A
-  report showing only the first three columns would have called this a win.
+  team reads every week. (The `LATENT GAP` cell is a probe false positive —
+  retraction R11 — and the route it names is unreachable.)
 - **Row 3** authorizes the object rather than the path, and refuses writes that
-  would carry restricted data to a queue an outside vendor can read.
+  would carry restricted data to a queue an outside vendor can read — **but only
+  when the agent pastes that data verbatim.** See retraction R1.
 
 **interpose always reports the pair.** There is no command that prints
 containment without printing what containment cost. That refusal is the point:
@@ -58,10 +67,16 @@ The path-prefix policy denies `/hr/`. The confidential document is not under
 `/hr/`. It leaks, *and* it still costs a legitimate task — paying the price of
 a control without getting the control.
 
-This is the whole argument for a corpus rather than a demo. Against one
-scenario, path-prefix was a policy with a defensible trade-off. Against two, it
-was never a good policy; it was a policy that happened to match one attack. No
-number in the first table could tell you which of those you were looking at.
+This is the argument for a corpus rather than a demo: against one scenario,
+path-prefix looked like a defensible trade-off, and no number in the first table
+could tell you otherwise.
+
+**Narrower than originally claimed** (retraction R10). Adding `"/ops/"` to the
+deny list — twelve characters, same rule shape — makes path-prefix contain both
+scenarios at 6/8 and 6/8. So the corpus demonstrates an incomplete deny-list,
+not a wrong policy class: a prefix rule must have enumerated the namespace
+correctly in advance, and each new scenario found one it had missed. That is a
+claim about maintenance burden.
 
 ## What it does not claim
 
@@ -114,8 +129,11 @@ lucky — and the verdict says which (`NOT_ATTEMPTED_GAP_OPEN`).
 
 ## Status
 
-Early. Two scenarios, three policies, one deterministic client with four
-behaviour classes, and an optional real-model provider. The first entry in
+Early, and **currently under repair**. Two scenarios, three policies, one
+deterministic client with four behaviour classes, and an optional real-model
+provider. Phase II adversarial review falsified a substantial part of what this
+README claimed; see [`docs/research/RETRACTIONS.md`](docs/research/RETRACTIONS.md)
+and [`docs/research/PHASE2_THESIS.md`](docs/research/PHASE2_THESIS.md). The first entry in
 [`docs/SIMPLIFICATIONS.md`](docs/SIMPLIFICATIONS.md) says the in-process policy
 decision point is not a tamper-proof reference monitor and biases every
 containment number optimistically. Read that file before quoting any result.

@@ -1,13 +1,25 @@
-"""Data provenance: which untrusted bytes reached which privileged call.
+"""Session-scoped near-duplicate detection between reads and privileged calls.
 
-This is the one question no existing harness can answer. AgentDojo's
-``TraceLogger`` writes chat transcripts; a transcript tells you what was said,
-not what *flowed*. Answering the flow question needs two mechanisms:
+.. warning::
+
+   **This module previously described itself as data provenance answering
+   "which untrusted bytes reached which privileged call".** That claim was
+   retracted on 2026-08-31 (R3, R4 in ``docs/research/RETRACTIONS.md``). What is
+   implemented is literal eight-word-span matching between the content of a
+   single-resource read and the text the model later wrote into a tool call.
+   Any restatement of the content defeats it, and two of the five bundled tools
+   attach no source to their output at all -- so for content arriving through
+   ``search_documents`` or ``get_employee_profile`` the question is answered
+   wrongly and silently rather than incompletely.
+
+   Do not describe this as information-flow control. It is a DLP fingerprint
+   matcher with a session scope.
 
 **Labels on values that cross the tool boundary.** Every tool result is a
-:class:`Tagged` value carrying the set of sources it was derived from. When
-results combine, labels join. This is the standard lattice construction from
-Denning (1976), reduced to its simplest useful form.
+:class:`Tagged` value carrying the set of sources it was derived from --
+in practice always zero or one, because no bundled tool derives a value from
+more than one resource. The lattice join this was built for is never
+exercised.
 
 **Attribution of model-authored text.** The agent's tool-call *arguments* are
 free text the model wrote. Nothing labels them, so provenance must be
