@@ -1,5 +1,38 @@
 # Two explorations: Cedar, and out-of-process enforcement
 
+> **CORRECTION NOTICE — Phase II, 2026-08-31.** Four claims below are wrong and
+> are left in place rather than deleted, per the project's own rule about not
+> shrinking a findings list by editing. See
+> [`research/agents/authorization.md`](research/agents/authorization.md) and
+> [`research/PHASE2_BASELINE.md`](research/PHASE2_BASELINE.md).
+>
+> 1. **§1 "attempt 2" is wrong, not merely partial.**
+>    `!context.source.readers.containsAll(resource.readers)` denies every write
+>    carrying a source that has *no* explicit reader allowlist — which is 26 of
+>    29 objects across both worlds, including a public document into a public
+>    queue. It is wrong on 3 of 6 real cases. The five cases shown below all
+>    happen to have explicit reader sets, which is why the error is invisible
+>    here. The corpus does not catch it either: 0 of 40 evaluated pairs involve
+>    an empty allowlist.
+> 2. **"The gap is arity" is the wrong framing.** Cedar *can* universally
+>    quantify over one collection when it sits on the resource or principal side
+>    of a `containsAll`. What it cannot do is iterate a **request-scoped** set,
+>    at any arity. A correct one-request-per-source form exists that handles both
+>    branches of `entitled_to` by modelling the classification lattice as an
+>    entity hierarchy.
+> 3. **Omitted: Cedar fails open.** A `forbid` whose condition errors is
+>    silently skipped. Misspell or omit the provenance key and the egress rule
+>    becomes a no-op returning `Allow`. A `has` guard covers some cases; a Cedar
+>    **schema** covers all of them by returning `NoDecision`. Any adapter
+>    contract must require the schema.
+> 4. **§2's cost figures are scaled against a wrong number.** The demo is
+>    **2.35 s**, not the "~20 s" stated — that figure was the pytest suite time
+>    used as a proxy. A persistent out-of-process PDP costs **8%** of the demo,
+>    not 1%; spawn-per-run would **more than double** it.
+>
+> The document's *recommendation* — Cedar before isolation — survives all four,
+> and is strengthened by the first three.
+
 Neither of these is built. Both are the next two roadmap items, and both had an
 open question that made estimating them impossible. This document answers those
 questions with measurements rather than reasoning, and ends with a
