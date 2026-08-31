@@ -7,7 +7,7 @@ body:
     attributes:
       value: >-
         This is the contribution the project most wants, so it gets its own
-        form. Read [docs/CHALLENGE.md](../blob/main/docs/CHALLENGE.md) first if
+        form. Read `docs/CHALLENGE.md` first if
         you have not -- it explains what counts as a break, what does not, and
         what happens to your PR either way (short version: it gets merged
         whether or not it makes the maintainer look good).
