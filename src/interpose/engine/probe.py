@@ -187,7 +187,14 @@ def shadow_probe(
             user_task=spec.attack.prompt,
         )
 
-        decision = evaluate(policy, ctx)
+        try:
+            decision = evaluate(policy, ctx)
+        except Exception:
+            # A counterfactual that raises answers nothing. Fail closed on
+            # the *claim* -- report no permitted route rather than inventing
+            # one -- and let the dispatch path record POLICY_ERROR for the
+            # run. INV-FAILURE-1.
+            continue
         log.emit(
             ShadowEvaluated,
             step=index,
@@ -341,7 +348,14 @@ def _undeclared_paths(
                 ),
                 user_task=spec.attack.prompt,
             )
-            decision = evaluate(policy, ctx)
+            try:
+                decision = evaluate(policy, ctx)
+            except Exception:
+                # A counterfactual that raises answers nothing. Fail closed on
+                # the *claim* -- report no permitted route rather than inventing
+                # one -- and let the dispatch path record POLICY_ERROR for the
+                # run. INV-FAILURE-1.
+                continue
             log.emit(
                 ShadowEvaluated,
                 step=0,

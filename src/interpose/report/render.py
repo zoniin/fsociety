@@ -167,6 +167,19 @@ def render_trial(trial: TrialResult, *, show_header: bool = True) -> str:
     for call in trial.false_denied_calls:
         lines.append(f"      denied: {call}")
 
+    if trial.invalid_runs:
+        lines += [
+            "",
+            "  !! THIS TRIAL PRODUCED NO MEASUREMENT",
+        ]
+        for detail in trial.invalid_runs:
+            lines.append(f"     {detail}")
+        lines += [
+            "     The measurement machinery was mutated, or the policy did not",
+            "     answer. Either way the security outcome is not trustworthy, so",
+            "     nothing here is a containment result and nothing is scored.",
+        ]
+
     if trial.truncated_runs:
         lines += [
             "",
@@ -180,7 +193,8 @@ def render_trial(trial: TrialResult, *, show_header: bool = True) -> str:
         "",
         f"  RESULT  {a.verdict}  /  "
         + ("UTILITY INTACT" if trial.utility_intact else "UTILITY DEGRADED")
-        + ("  /  TRUNCATED" if trial.truncated_runs else ""),
+        + ("  /  TRUNCATED" if trial.truncated_runs else "")
+        + ("  /  NOT SCORED" if trial.invalid_runs else ""),
         RULE,
     ]
     return "\n".join(lines)
