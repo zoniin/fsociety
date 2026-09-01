@@ -475,7 +475,9 @@ class Runner:
 
         This function holds no reference to the scenario attack section. That
         is the structural half of the fairness guarantee; the test half is in
-        ``tests/test_policy_isolation.py``.
+        **No such test exists.** This docstring cited
+        ``tests/test_policy_isolation.py``, which was never written. See
+        ``docs/research/RETRACTIONS.md`` R13.
         """
         spec = self.cfg.scenario.spec
         actor = world.principal(spec.agent.actor)

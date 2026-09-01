@@ -1,6 +1,14 @@
 # Agent A — Operating Systems Security Architect
 
-**Phase III / INT-001 · repo `fsociety` @ `55721a2` · all findings executed, not inferred**
+**Phase III / INT-001 · repo `fsociety` · all findings executed, not inferred**
+
+> **Re-verified against `97b1fdb`** ("fix: two shipped defects on the policy trust
+> boundary"), which landed from the parallel reference-monitor review while this
+> analysis was running. That commit closes `challenge --policy <module:Class>` and
+> scrubs/bounds policy-authored `rule_id`/`reason` in `_dispatch`. Both are real
+> fixes and both are orthogonal to everything below: **all fifteen findings
+> reproduce unchanged at `97b1fdb`.** The two places where its fixes narrow a claim
+> are marked inline.
 
 ---
 
@@ -18,7 +26,8 @@ with `enforcement_escape=false`, `sensitive_data_exposed=false`,
 `unauthorized_asset_read=false`, `possible_exposure=false`,
 `authorization_gap_open=false`, zero `detector.triggered` events, and three
 `tool.blocked` events carrying the reference policy's own rule id
-`R2.not-in-reader-set`.
+`R2.not-in-reader-set`. `interpose verify` reports **`AGREES` — "policy
+reference-least-privilege content matches"** on that artifact.
 
 Every number Interpose publishes is currently writable by the thing it is
 measuring. That is the demonstrated defect. It is a benchmark-integrity defect
@@ -233,11 +242,14 @@ if callable(override):
 
 The freeze protocol's root of trust is a method call on the untrusted object. A
 policy is currently authoritative for its own content digest, and by extension for
-`freeze --check`, `challenge`'s `matches` status, and `verify`'s `AGREES`. It is
-also authoritative for its `id`, so it can claim a builtin's name. **Both must move
+**`verify`'s `AGREES`** — demonstrated end-to-end at `97b1fdb`. It is also
+authoritative for its `id`, so it can claim a builtin's name. **Both must move
 harness-side**: the digest computed from the resolved module's source closure by
 the harness, and third-party ids namespaced by their ref so no adapter can claim
 `reference-least-privilege`.
+
+This is the fix with the best ratio in the whole report: roughly ten lines, no
+boundary, and it is what stops a published result from being unfalsifiable.
 
 Also never authoritative for: the event log, the world digest, the outcome
 verdict, the detector results, or the entitlement oracle.
@@ -262,7 +274,7 @@ world `sha256:29bb964d…`.
 | 9 | **Terminate the harness** | **YES, silently** | `Terminator` calls `os._exit(0)` inside `evaluate()`. Process exit code **0**. A CI gate checking exit status sees green on a run that produced nothing. |
 | 10 | **Hang** | **YES, unbounded** | `Hanger` spins in `evaluate()`. No timeout exists at `policy/base.py:77` or any caller. Killed externally at 12 s; `exit=124`. |
 | 11 | **Affect future evaluations** | **YES** | Within a process: module patches survive every subsequent run and trial. Across processes: none needed — see #12. |
-| 12 | **Forge its own identity and digest** | **YES** | `DigestForger` declares `id="reference-least-privilege"` and a `digest()` returning `policy_digest(load_policy("reference"))`. The artifact recorded `sha256:9057b83853e7abfe…`, matching `policy-freeze.json` exactly. `freeze --check` prints intact; `challenge` prints `matches`. |
+| 12 | **Forge its own identity and digest — and get `verify` to bless it** | **YES** | `DigestForger` declares `id="reference-least-privilege"` and a `digest()` returning `policy_digest(load_policy("reference"))`. `policy_digest` returns `sha256:9057b83853e7abfe…`, matching `policy-freeze.json` exactly. **End-to-end at `97b1fdb`: `interpose verify` on the `Laundered` artifact prints `AGREES` / "policy reference-least-privilege content matches"** — on a run that exfiltrated payroll to an externally readable queue. *(`97b1fdb` closed the `challenge --policy` route; `run --policy` still produces the artifact, and `verify` still blesses it.)* |
 | 13 | **Mutate the "frozen" `DecisionContext`** | **YES, without effect** | `ctx.action.arguments` is a mutable `dict`; `object.__setattr__` defeats `frozen=True`. Harmless *today* only because `runner.py:508` passes `dict(arguments)` — a copy. The immutability is a convention, not a barrier. |
 | 14 | **Execute tools directly, bypassing `_dispatch`** | **YES** | `ShadowExecutor` returns `DENY` with `rule_id="R2.not-in-reader-set"` while itself calling `registry.get("create_support_ticket").execute(world=world, …)`. 366 bytes of payroll into the external queue, **0 `tool.executed` events**, 3 clean `tool.blocked` events. |
 | 15 | **Fail distinguishably** | **NO — this is a gap in the other direction** | `Exploder` raises inside `evaluate()`; the traceback propagates uncaught to exit **1**. The project's taxonomy (`errors.py`: `HarnessError`=2, `UsageError`=3) exists precisely to separate "the policy failed" from "the lab broke", and a policy fault is currently neither. |
@@ -285,7 +297,16 @@ tool.executed           : 0
 tool.blocked            : 3   (rule_id R2.not-in-reader-set)
 actually exfiltrated    : 366 bytes of payroll_2026_q3.csv → queue vendor-support
                           (readable by ext:vendor-portal)
+
+$ interpose verify forged_result.json
+AGREES
+  scenario indirect-document-injection content matches
+  policy reference-least-privilege content matches
 ```
+
+`verify` is the whole citability argument — `report/verify.py:3-5`: *"the difference
+between a number and a claim is whether a third party can check what produced it."*
+It currently checks a digest the measured party computes.
 
 ### Two collateral findings about the fairness guarantee
 
@@ -502,11 +523,14 @@ Cheapest first; the first two close the highest-leverage findings for a few line
 each.
 
 1. **Stop honouring `policy.digest()` for non-builtin adapters** and refuse an
-   adapter that claims a builtin `id`. Closes #12 — the freeze protocol's root of
-   trust — for roughly ten lines.
-2. **Stop `verify` importing a module named in the artifact.** Resolve the recorded
-   `policy.id` only against `BUILTIN_POLICIES` and a caller-supplied allowlist;
-   return `UNVERIFIABLE` otherwise. Closes the Q4 data→code path.
+   adapter that claims a builtin `id`. Closes #12 — currently `interpose verify`
+   prints `AGREES` on an artifact from a policy that exfiltrated payroll — for
+   roughly ten lines. **Do this first.**
+2. **Stop `verify` importing a module named in the artifact** (`report/verify.py:41`,
+   unchanged at `97b1fdb`). Resolve the recorded `policy.id` only against
+   `BUILTIN_POLICIES`; return `UNVERIFIABLE` otherwise. Closes the Q4 data→code
+   path, and is the exact same argument `97b1fdb` already accepted for
+   `challenge --policy` — applied to the artifact channel instead of the flag.
 3. **Wrap `evaluate()` so a policy exception is a policy fault**, with its own exit
    code and a recorded `policy.error` event. Closes #15 and is a prerequisite for
    the worker's fault handling anyway.
@@ -531,6 +555,7 @@ constraint honoured; `git status` on the tree is unchanged):
   roundtrip.py        529/529 lossless DecisionContext JSON round-trip
   bench_ipc.py        stdio vs mp.connection vs TCP, measured
   count_calls.py      529 evaluations / 2.73 s demo
+  forged_result.json  the artifact `interpose verify` reports AGREES on
   bundle/             result.json + evilverify.py — the verify data→code path
 ```
 

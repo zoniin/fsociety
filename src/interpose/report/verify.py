@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import ScenarioError, UsageError
-from ..policy.base import SecurityPolicy, load_policy, policy_digest
+from ..policy.base import BUILTIN_POLICIES, SecurityPolicy, load_policy, policy_digest
 from ..scenario.loader import load_scenario
 
 __all__ = ["VerifyReport", "verify_result_file"]
@@ -37,13 +37,19 @@ def _resolve_policy(policy_id: str) -> SecurityPolicy | None:
     A result records the policy's own ``id``, which is not always the short
     name used on the command line, so both are tried.
     """
-    try:
-        return load_policy(policy_id)
-    except UsageError:
-        pass
-    for short in ("permissive", "path-prefix", "reference"):
+    # `policy_id` comes out of an artifact file, and `load_policy` accepts
+    # `module.path:ClassName` and imports it. Passing it through meant
+    # `interpose verify someone-elses-result.json` executed a module that the
+    # *artifact* named -- arbitrary code execution from a data file, in the one
+    # command whose entire purpose is checking a result you did not produce.
+    #
+    # Resolution is now closed over the built-in registry. An artifact naming a
+    # third-party adapter is reported as unresolvable rather than loaded, which
+    # is the correct answer anyway: this build cannot attest to a policy it does
+    # not ship.
+    for short in sorted(BUILTIN_POLICIES):
         candidate = load_policy(short)
-        if candidate.id == policy_id:
+        if candidate.id == policy_id or short == policy_id:
             return candidate
     return None
 

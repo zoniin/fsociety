@@ -115,14 +115,23 @@ def policy_digest(policy: SecurityPolicy) -> str:  # SIMPL-0007
     the attacks that score it" becomes checkable from git history plus this
     hash rather than asserted in a README.
 
-    A policy whose behaviour lives outside its own source file -- a remote
-    service, a data file -- gets a digest that does not capture that
-    behaviour. Such adapters should override ``digest`` themselves; the
-    limitation is recorded as SIMPL-0007.
+    **This function must never ask the policy what its digest is.** It used to:
+    a ``digest()`` method on the adapter was honoured as an override, on the
+    reasoning that a policy whose behaviour lives outside its source file knows
+    best. Against an adversarial adapter that is exactly backwards. A hostile
+    policy returned the *genuine* reference policy's digest, matched
+    ``policy-freeze.json`` byte for byte, and ``interpose verify`` printed
+    ``AGREES`` over a forged result in which the adapter had performed the
+    exfiltration itself. Self-attestation is not identity.
+
+    What remains is a hash of the adapter's own source and its first-party
+    import closure. That is honest but **weak for third-party code**: an
+    external adapter's closure contains no ``interpose.*`` modules beyond the
+    shared ones, so two adapters with opposite behaviour can digest alike. A
+    digest therefore certifies a *built-in* policy and says little about an
+    external one -- recorded as SIMPL-0007, and the reason
+    ``interpose challenge`` now refuses non-built-in targets.
     """
-    override = getattr(policy, "digest", None)
-    if callable(override):
-        return str(override())
     texts = _import_closure_sources(type(policy))
     if texts:
         return sha256_text("\n".join(texts))

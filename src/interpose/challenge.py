@@ -181,6 +181,14 @@ def evaluate_challenge(
     trial: TrialResult,
     freeze_path: Path = FREEZE_FILE,
 ) -> ChallengeReport:
+    # Defence in depth. The CLI refuses a non-built-in target before reaching
+    # here, but this is a library entry point and a caller that skips the CLI
+    # would otherwise import whatever module the argument names. `challenge`
+    # only ever means something about a frozen built-in.
+    if policy_short not in BUILTIN_POLICIES:
+        raise UsageError(
+            f"challenge only targets a frozen built-in policy, not {policy_short!r}"
+        )
     policy = load_policy(policy_short)
     digest = policy_digest(policy)
 

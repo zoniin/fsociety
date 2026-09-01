@@ -182,6 +182,100 @@ can track it.
 
 ---
 
+---
+
+# Phase III retractions
+
+Issued 2026-09-01 during the Phase III agent review, before any architecture was
+built. Each was found by an agent and reproduced by the principal investigator.
+
+## R13 · That the blindness rule is "asserted by test"
+
+> "Enforced three ways: the context builder holds no reference to the attack
+> section; `policy/` imports nothing from `scenario/` (**asserted by test**); and
+> the decision stream is identical between benign and attack runs up to the
+> point the corpus differs (**asserted by test**)." — `docs/PROTOCOL.md`
+>
+> "the test half is in `tests/test_policy_isolation.py`" — `engine/runner.py`
+>
+> "plus a test asserting the single chokepoint" — `docs/research/ENFORCEMENT_BOUNDARY.md`
+
+**None of those tests existed.** `tests/test_policy_isolation.py` had never been
+written. No test asserted the import property, the identical-prefix property, or
+the dispatch chokepoint. The blindness rule — one of the project's three
+anti-circularity mechanisms — was carried entirely in prose.
+
+The properties were *true*; nothing would have caught them becoming false.
+
+**Replacement:** the tests now exist (`tests/test_policy_isolation.py`), and
+writing the chokepoint one immediately found that there are **two**
+tool-execution call sites, not one — the second added during INT-000's probe
+repair. The invariant is now stated as the one that actually holds: exactly one
+call site passes the live world, and the counterfactual passes a copy.
+
+**And the scope is narrower than the claim was.** The import check binds only
+`src/interpose/policy/**`. A third-party adapter is not in that directory, and a
+policy that walks its call stack imports nothing at all. Both are now pinned by
+`test_the_import_check_does_not_bind_a_frame_walk`, which asserts the gap is
+still open rather than pretending it is closed.
+
+## R14 · That a policy digest identifies a policy
+
+> "Such adapters should override `digest` themselves" — `policy/base.py`
+
+`policy_digest` honoured a `digest()` method on the adapter object. A hostile
+policy returned the **genuine reference policy's digest**, matched
+`policy-freeze.json` byte for byte, and `interpose verify` printed `AGREES` over
+a forged result in which the adapter had performed the exfiltration itself.
+Self-attestation is not identity.
+
+**Replacement:** the override is removed. What remains — a hash of the adapter's
+source and first-party import closure — is honest for built-ins and **weak for
+third-party code**, because an external adapter's closure contains no
+`interpose.*` modules beyond the shared ones. A digest certifies a built-in and
+says little about an adapter. That is why `challenge` now refuses non-built-in
+targets.
+
+## R15 · That `verify` is safe to run on someone else's artifact
+
+`report/verify.py` passed the artifact's recorded `policy_id` to `load_policy`,
+which accepts `module.path:ClassName` and imports it. So `interpose verify
+someone-elses-result.json` executed a module **named by the artifact** — arbitrary
+code execution from a data file, in the one command whose entire purpose is
+checking a result you did not produce.
+
+**Replacement:** resolution is closed over the built-in registry. An artifact
+naming a third-party adapter is reported unresolvable rather than loaded.
+
+## R16 · That `challenge` is safe for a stranger to run
+
+`cmd_challenge` passed `--policy` straight to `load_policy`. `challenge` is the
+one command `docs/CHALLENGE.md` asks strangers to run.
+
+**Replacement:** refused at both the CLI and library entry points. It costs
+nothing — a non-built-in policy has no freeze entry, so the result already
+scored `unfrozen`.
+
+## R17 · That policy-authored text is trusted output
+
+Model output, prompts and tool results all pass through `scrub`. The policy's
+`rule_id` and `reason` did not, so a policy could write ANSI escapes and a
+forged `RESULT CONTAINED` line into the authoritative event log and the rendered
+report. **Replacement:** scrubbed and bounded.
+
+## R18 · SIMPL-0001A, as written, is false
+
+`SIMPL-0001` says the enforcement point "lives in the same address space as the
+thing it mediates" and is "a function call the agent's process could in principle
+skip." **The agent has no process.** `provider.respond()` returns a dataclass;
+`_provider_factory` hard-codes an allowlist and there is no
+`load_provider(dotted.path)`. Model output cannot skip a function call.
+
+**Replacement:** the live sub-item is **SIMPL-0001B** — *policy adapter code and
+the enforcement point share an address space* — which is demonstrated, total, and
+the subject of Phase III. Full split in
+[`phase3/agents/reference-monitor.md`](phase3/agents/reference-monitor.md).
+
 ## What is *not* retracted
 
 - The pairing rule, and the refusal to print containment without cost.
