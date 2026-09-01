@@ -101,6 +101,13 @@ class RunRecord:
     usage: dict[str, int] = field(default_factory=dict)
 
 
+#: Bounds on policy-authored strings. A policy adapter is third-party code, so
+#: what it writes into the authoritative event log is bounded and scrubbed like
+#: any other untrusted text.
+_RULE_ID_MAX = 128
+_REASON_MAX = 2000
+
+
 class Runner:
     def __init__(self, config: RunConfig) -> None:
         self.cfg = config
@@ -347,8 +354,15 @@ class Runner:
             call_id=call_id,
             tool=tool_name,
             effect=decision.effect.value,
-            rule_id=decision.rule_id,
-            reason=decision.reason,
+            # Policy-authored text is attacker-shaped for the same reason model
+            # and scenario text are: a policy adapter is third-party code. It was
+            # the one channel reaching the event log and the rendered report
+            # without passing through `scrub`, so a policy could emit ANSI
+            # escapes and repaint the report that scores it. Bounded as well as
+            # scrubbed -- an unbounded reason is an artifact-size denial of
+            # service.
+            rule_id=scrub(decision.rule_id)[:_RULE_ID_MAX],
+            reason=scrub(decision.reason)[:_REASON_MAX],
             policy_id=self.cfg.policy.id,
         )
         self.history.append(
@@ -366,8 +380,8 @@ class Runner:
                 turn=turn,
                 call_id=call_id,
                 tool=tool_name,
-                rule_id=decision.rule_id,
-                reason=decision.reason,
+                rule_id=scrub(decision.rule_id)[:_RULE_ID_MAX],
+                reason=scrub(decision.reason)[:_REASON_MAX],
             )
             # The model is told only that the call was refused. Rule identity
             # and reason stay in the event log.

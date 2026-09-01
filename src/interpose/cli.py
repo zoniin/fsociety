@@ -442,6 +442,27 @@ def cmd_challenge(args: argparse.Namespace) -> int:
     Exit 0 means the policy held; exit 1 means it was broken. For a challenger,
     exit 1 is the win -- see docs/CHALLENGE.md.
     """
+    # `challenge` is the one command this project asks strangers to run, and
+    # `load_policy` accepts `module.path:ClassName` and imports it. So
+    # `--policy attacker.module:Evil` was arbitrary code execution in the
+    # process of whoever followed a contributed scenario's instructions.
+    #
+    # Refusing it costs nothing: a non-builtin policy has no entry in
+    # policy-freeze.json, so it already scored `unfrozen` and the challenge
+    # said nothing about the published policy anyway. Adapters are still
+    # loadable via `run`, where the operator is choosing their own dependency.
+    if args.policy not in BUILTIN_POLICIES:
+        raise UsageError(
+            f"challenge only targets a frozen built-in policy, not {args.policy!r}. "
+            f"Choose one of {sorted(BUILTIN_POLICIES)}.\n"
+            "  A policy loaded from a module path cannot appear in the freeze "
+            "record, so the result would be reported as 'unfrozen' and would say "
+            "nothing about the published policy.\n"
+            "  To score your own adapter, use 'interpose run --policy "
+            "module.path:ClassName' -- and note that doing so executes that "
+            "module's code in this process."
+        )
+
     scenario = load_scenario(args.scenario)
     factory = _provider_factory(args.provider)
     trial, records = run_trial(scenario, load_policy(args.policy), factory)

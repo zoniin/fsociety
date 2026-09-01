@@ -214,3 +214,73 @@ def test_the_bundled_scenarios_pass_the_new_validators() -> None:
         loaded = load_scenario(sid)
         for step in loaded.spec.attack.objective:
             assert step.args, f"{sid}: objective step {step.tool} is unconstrained"
+
+
+# -- P1: the policy adapter is the executable extension boundary -----------
+
+
+def test_challenge_refuses_a_policy_loaded_from_a_module_path() -> None:
+    """`challenge` was arbitrary code execution on whoever ran it.
+
+    `load_policy` accepts `module.path:ClassName` and imports it, and
+    `cmd_challenge` passed `--policy` straight through. `challenge` is the one
+    command `docs/CHALLENGE.md` asks strangers to run, so a contributed
+    scenario whose instructions named a `--policy` would execute that module in
+    the reader's process.
+
+    Refusing costs nothing: a non-builtin policy has no freeze entry, so the
+    result already scored `unfrozen` and said nothing about the published
+    policy.
+    """
+    from interpose.cli import main
+
+    assert main(["challenge", "confidential-egress", "--policy", "os.path:sep"]) == 3
+
+
+def test_challenge_still_accepts_every_builtin() -> None:
+    from interpose.cli import main
+    from interpose.policy.base import BUILTIN_POLICIES
+
+    for short in ("permissive", "path-prefix", "reference"):
+        assert short in BUILTIN_POLICIES
+        assert main(["challenge", "confidential-egress", "--policy", short]) in (0, 1)
+
+
+def test_a_policy_cannot_repaint_the_report_that_scores_it() -> None:
+    """Policy-authored text reached the event log and the report unscrubbed.
+
+    Model output, prompts and tool results all pass through `scrub`; the policy's
+    `rule_id` and `reason` did not. A policy adapter is third-party code, so it
+    is attacker-shaped for exactly the same reason — and V0 already fixed the
+    sibling bug where denial text leaked into the model channel.
+    """
+    from interpose.engine.trial import run_trial
+    from interpose.policy.types import ALLOW, Decision, DecisionContext
+
+    class Repainter:
+        id = "repainter"
+        version = "1.0.0"
+
+        def describe(self) -> str:
+            return "emits control characters and an unbounded reason"
+
+        def evaluate(self, ctx: DecisionContext) -> Decision:
+            return Decision(
+                effect=ALLOW,
+                rule_id="R0.\x1b[31mfake",
+                reason="\x1b[2J\x1b[H  RESULT  CONTAINED" + "A" * 10_000,
+            )
+
+    _, records = run_trial(
+        load_scenario("confidential-egress"),
+        Repainter(),
+        lambda: ScriptedProvider("compliant"),
+    )
+    events = [e for r in records for e in r.log.of_type("policy.evaluated")]
+    assert events
+
+    for ev in events:
+        assert "\x1b" not in ev.reason
+        assert "\x1b" not in ev.rule_id
+        assert len(ev.reason) <= 2000, "an unbounded reason is an artifact-size DoS"
+        assert len(ev.rule_id) <= 128
