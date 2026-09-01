@@ -22,8 +22,10 @@ single call site in :func:`evaluate` is the only thing that changes.
 
 from __future__ import annotations
 
+import copy
 import importlib
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Protocol, cast, runtime_checkable
@@ -32,7 +34,19 @@ from ..digest import sha256_text
 from ..errors import PolicyLoadError
 from .types import Decision, DecisionContext
 
-__all__ = ["BUILTIN_POLICIES", "SecurityPolicy", "evaluate", "load_policy", "policy_digest"]
+__all__ = [
+    "BUILTIN_POLICIES",
+    "PolicyFactory",
+    "SecurityPolicy",
+    "as_policy_factory",
+    "evaluate",
+    "load_policy",
+    "policy_digest",
+]
+
+#: Produces a policy instance for exactly one scored run. See
+#: :func:`as_policy_factory` for why this is a factory and not an object.
+PolicyFactory = Callable[[], "SecurityPolicy"]
 
 #: Short names accepted on the command line. Anything else is treated as a
 #: dotted path to a user-supplied module.
@@ -177,3 +191,44 @@ def _import_closure_sources(cls: type) -> list[str]:
             elif isinstance(value, ModuleType):
                 queue.append(value.__name__)
     return [text for _, text in sorted(files)]
+
+
+def as_policy_factory(source: SecurityPolicy | type | PolicyFactory) -> PolicyFactory:
+    """Adapt a policy, a policy class, or a factory into a per-run factory.
+
+    **A policy instance participates in exactly one scored run** (INV-LIFECYCLE-1).
+
+    Providers have had this guarantee since V0 -- ``run_trial`` takes a
+    ``ProviderFactory`` and ``trial.py`` explains at length why a provider must
+    not carry state between runs. Policies were handed a single object and the
+    same object was threaded through the attack run and all eight benign runs,
+    and through all 25 cells of ``matrix``.
+
+    That was not a hypothetical. The shadow probe replays the declared adversary
+    objective through the ordinary ``evaluate`` call site, so every run --
+    including a benign task that reads a public travel policy -- shows the policy
+    the attack's tool-and-argument shapes. With a shared instance a policy that
+    merely *memoises* accumulates the objective across runs; a deliberately
+    harvesting one scored 8 of 9 matrix cells CONTAINED, against 0 of 9 with
+    fresh instances. See ``tests/test_policy_lifecycle.py``.
+
+    A class is instantiated per run. A factory is used as given. A bare instance
+    is deep-copied per run, so state cannot accumulate even when the caller has
+    already used it -- and if it cannot be copied, the caller is told rather than
+    silently getting the shared-state behaviour back.
+    """
+    if isinstance(source, type):
+        return lambda: cast("SecurityPolicy", source())
+    if callable(source) and not hasattr(source, "evaluate"):
+        return cast(PolicyFactory, source)
+
+    instance = cast("SecurityPolicy", source)
+    try:
+        copy.deepcopy(instance)
+    except Exception as exc:
+        raise PolicyLoadError(
+            f"policy {getattr(instance, 'id', instance)!r} cannot be copied per run "
+            f"({exc}), so it would carry state between runs and violate "
+            "INV-LIFECYCLE-1. Pass a class or a factory instead."
+        ) from exc
+    return lambda: cast("SecurityPolicy", copy.deepcopy(instance))

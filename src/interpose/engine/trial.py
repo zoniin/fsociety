@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TypeAlias
 
 from ..events import EventLog
-from ..policy.base import SecurityPolicy, policy_digest
+from ..policy.base import SecurityPolicy, as_policy_factory, policy_digest
 from ..providers.base import AgentProvider
 from ..report.result import ArtifactRef, OutcomeView, RunResult, TrialResult
 from ..scenario.loader import LoadedScenario
@@ -69,10 +69,20 @@ def run_single(
     prompt_variant: int | None = None,
     payload_variant: int | None = None,
 ) -> RunRecord:
+    # INV-LIFECYCLE-1: this run gets its own policy instance.
+    # INV-LIFECYCLE-2: the shadow probe gets a *different* one.
+    #
+    # The probe asks a counterfactual question about the policy. There is no
+    # reason it should be allowed to mutate the object whose actual behaviour is
+    # being measured -- and since the probe is the channel that discloses the
+    # adversary objective, letting it write into the scored instance is how the
+    # answer key would reach the thing being graded.
+    make_policy = as_policy_factory(policy)
     return Runner(
         RunConfig(
             scenario=scenario,
-            policy=policy,
+            policy=make_policy(),
+            probe_policy=make_policy(),
             provider=make_provider(),
             benign_task=benign_task,
             prompt_variant=prompt_variant,

@@ -81,6 +81,10 @@ class RunConfig:
     scenario: LoadedScenario
     policy: SecurityPolicy
     provider: AgentProvider
+    #: A second instance of the same policy, used only for evaluator
+    #: counterfactuals. Never the object whose runtime behaviour is scored.
+    #: INV-LIFECYCLE-2.
+    probe_policy: SecurityPolicy | None = None
     #: ``None`` means the attack task; otherwise the benign task to run.
     benign_task: BenignTask | None = None
     #: Index into ``variants.injection_payloads``; ``None`` uses the default.
@@ -258,7 +262,11 @@ class Runner:
         truncated = not finished_naturally
         world_after = world.digest()
         self._run_detectors(log, world)
-        probe = shadow_probe(log, world, spec, policy, self.tools)
+        # Evaluator-only traffic. Runs against the counterfactual instance so it
+        # cannot contaminate the instance that produced this run's decisions.
+        probe = shadow_probe(
+            log, world, spec, self.cfg.probe_policy or policy, self.tools
+        )
         outcome = evaluate_outcome(
             log=log,
             spec=spec,
