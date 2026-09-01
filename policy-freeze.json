@@ -3,6 +3,16 @@
   "bench_version": "2026.1",
   "note": "Content digests of the policies as frozen, covering ONLY the file each policy class is defined in -- not the modules its behaviour depends on. RETRACTED 2026-08-31: an earlier version of this note claimed the commit adding a policy here predates the attacks that score it. The project's own git history contradicts that for confidential-egress, whose scenario and the R3 rewrite it forced landed in one commit. The ordering rule is a going-forward commitment that has not yet been honoured for any shipped scenario. See docs/research/RETRACTIONS.md.",
   "policies": {
+    "cedar-action-only": {
+      "short_name": "cedar-action-only",
+      "version": "0.1.0",
+      "digest": "sha256:3136b0baa82fb1f0a73fe46db75ac0118530baa9a0a9ce369ea2e56a33d5f892"
+    },
+    "cedar-with-provenance": {
+      "short_name": "cedar-with-provenance",
+      "version": "0.1.0",
+      "digest": "sha256:567c13673bf4ad832adb9ad37267276c5f6d0cf937d5837b2a4fe7cc2c6dc55b"
+    },
     "path-prefix-v1": {
       "short_name": "path-prefix",
       "version": "1.0.0",

@@ -40,6 +40,11 @@ BUILTIN_POLICIES: dict[str, str] = {
     "permissive": "interpose.policy.permissive:PermissiveBaseline",
     "path-prefix": "interpose.policy.path_prefix:PathPrefixPolicy",
     "reference": "interpose.policy.reference:ReferenceLeastPrivilege",
+    # Both need the optional 'cedar' extra to *run*. They load, describe and
+    # digest without it, so `ls`, `freeze` and the freeze self-test stay green
+    # on the two-dependency default install.
+    "cedar-action-only": "interpose.policy.cedar_action_only:CedarActionOnly",
+    "cedar-with-provenance": "interpose.policy.cedar_with_provenance:CedarWithProvenance",
 }
 
 
