@@ -17,13 +17,14 @@ has been migrated. Artifacts:
 | `results/phase3/probe_leak_demo.py` | the oracle-harvesting policy of §6 |
 | `results/phase3/arch-equivalence.json` | the recorded baseline, 90 comparisons, `EQUIVALENT` |
 
-Measured at `97b1fdb`, Python 3.13.14, Windows-AMD64, `cedarpy` installed.
+Measured at **`5fde6eb`**, Python 3.13.14, Windows-AMD64, `cedarpy` installed.
+90 comparisons, 0 divergent, 49.9 s.
 
-> **Live drift notice.** The `EQUIVALENT` baseline was recorded at committed
-> HEAD `97b1fdb`. While this was being written, a sibling Phase III agent's
-> uncommitted change to `policy_digest` made the protocol **unusable** on the
-> working tree — correctly detected, exit 2. See §1.8; it is a finding, not a
-> failure, and it has consequences beyond Phase III.
+> **Live drift notice, and the first thing the protocol caught.** HEAD moved
+> twice under this analysis. A sibling Phase III agent's `policy_digest` fix
+> (R14, `5fde6eb`) made the protocol report itself **UNUSABLE**, exit 2 —
+> correctly, and within seconds. That is a finding, not a failure, and its
+> consequences reach back into Phase II. See §1.8.
 
 ---
 
@@ -38,8 +39,8 @@ threatens is two things the artifact does not record and no test asserts:
 first is a live blindness hole today, demonstrated in §6: a purely permissive
 policy that harvests the shadow probe's contexts contains **8 of 9 `matrix`
 cells** when the instance is shared, and **0 of 9** when it is not. The second is
-a published number: the Cedar-versus-reference cost ratio is **167×** measured
-in process and **5.7×** measured through a worker, with nothing about Cedar
+a published number: the Cedar-versus-reference cost ratio is **177×** measured
+in process and **6.0×** measured through a worker, with nothing about Cedar
 changed (§3).
 
 ---
@@ -167,8 +168,7 @@ Every arm but `raw` reaches the policy through a delegating object, so the
 protocol is only valid if substituting that object leaves `policy_digest`
 unchanged. `policy_digest` hashes `type(policy)`'s first-party import closure,
 so a wrapper changes it **unless the wrapper's `digest()` is honoured as an
-override** — which it was, until a sibling agent removed the override in the
-working tree of 2026-09-01.
+override** — which it was, until R14 removed the override in `5fde6eb`.
 
 That removal is **correct**: a hostile adapter had used self-attestation to
 return the genuine reference policy's digest, match `policy-freeze.json` byte
@@ -208,6 +208,14 @@ Until that seam exists the protocol prints `PROTOCOL UNUSABLE` and exits **2**,
 matching `METRICS.md`'s split: `2` is "the lab broke", not "the policy failed".
 An instrument that cannot tell those apart is the failure mode this whole phase
 is about.
+
+`arch_equivalence._transparent` carries a **clearly labelled stopgap** so the
+protocol can run at `5fde6eb` today: the wrapper is subclassed with the inner
+policy's `__module__`, so `policy_digest` walks the wrapped policy's closure.
+This is not R14 reintroduced — the wrapper cannot name an arbitrary digest, only
+the module it delegates into, and the hash is still computed from that module's
+source. It is harness-side only, and **it does not fix
+`results/phase2/cedar_ablation.py`, which remains broken.**
 
 ---
 
@@ -258,17 +266,22 @@ Per-decision latency, mean over 30 cells per arm:
 
 | policy | in-process | roundtrip | worker | IPC adds | inflation |
 |---|---|---|---|---|---|
-| `permissive-baseline` | 0.0024 ms | 0.0823 | **0.1861** | +0.184 | **76×** |
-| `path-prefix-v1` | 0.0027 | 0.0817 | **0.1815** | +0.179 | **69×** |
-| `reference-least-privilege` | 0.0045 | 0.0870 | **0.1976** | +0.193 | **44×** |
-| `cedar-action-only` | 0.5778 | 0.6587 | **0.9069** | +0.329 | **1.6×** |
-| `cedar-with-provenance` | 0.7450 | 0.8429 | **1.1265** | +0.381 | **1.5×** |
+| `permissive-baseline` | 0.0025 ms | 0.0774 | **0.1729** | +0.170 | **69×** |
+| `path-prefix-v1` | 0.0028 | 0.0789 | **0.1588** | +0.156 | **57×** |
+| `reference-least-privilege` | 0.0041 | 0.0821 | **0.1649** | +0.161 | **41×** |
+| `cedar-action-only` | 0.5441 | 0.6379 | **0.8236** | +0.280 | **1.5×** |
+| `cedar-with-provenance` | 0.7195 | 0.8138 | **0.9873** | +0.268 | **1.4×** |
 
-IPC costs a roughly constant 0.18–0.38 ms. Because it is constant and the
+IPC costs a roughly constant 0.16–0.28 ms. Because it is constant and the
 policies are three orders of magnitude apart, **it is not neutral between
 them**:
 
-> **Cedar : reference cost ratio — 167× in process, 5.7× through a worker.**
+> **Cedar : reference cost ratio — 177× in process, 6.0× through a worker.**
+
+(An earlier run of the identical grid gave 167× and 5.7×. Latency is the one
+quantity here that is not bit-reproducible, which is itself the argument for
+never comparing it for equality and for never letting two architectures share a
+column.)
 
 `CEDAR_PROVENANCE_ABLATION.md` publishes a `ms` column per cell and states as
 claim 7: *"An external Cedar PDP is affordable here: 0.60–0.89 ms per decision
@@ -308,7 +321,7 @@ in the type (`TrialResult` requires `benign: list[RunResult]`), in `trial.py`
 fails at parse). None of that is on the policy side of the boundary.
 
 **Economically, a worker attacks it, and this is not hypothetical.** Measured
-worker spawn: **0.218 s mean, 0.269 s max**. A trial is 8–10 runs, of which 7–9
+worker spawn: **0.205 s mean**. A trial is 8–10 runs, of which 7–9
 are benign. `interpose demo` is 9 trials ≈ 78 runs. Worker-*per-run* would add
 ~17 s of process spawning to a 3.4 s demo — and **the benign suite is where
 almost all of that cost lands**, because it is 8× the size of the attack run.
@@ -446,7 +459,7 @@ that widened any of them; and it says nothing about state.
 ### Recommended lifetime rule
 
 **One worker per run, or a documented `reset` between runs — never one worker
-for the process.** Given a 0.218 s spawn, per-run workers cost ~17 s on `demo`;
+for the process.** Given a 0.205 s spawn, per-run workers cost ~17 s on `demo`;
 that is the price of the blindness rule, it is affordable, and it should be paid
 knowingly rather than optimised away by someone who does not know it is load-
 bearing. If per-trial or persistent workers are chosen instead, the blindness
@@ -569,7 +582,7 @@ Any one of these, on its own:
    an escape. Both are the harness reporting a policy result for a harness
    event.
 6. **The latency column in `CEDAR_PROVENANCE_ABLATION.md` is re-run and
-   overwritten** without an architecture stamp, so a 167× ratio and a 5.7× ratio
+   overwritten** without an architecture stamp, so a 177× ratio and a 6.0× ratio
    occupy the same column.
 7. **A benign-suite fast path, sampling flag, or attack-only shortcut is added
    for worker performance.** That is the pairing rule dying of a performance
@@ -619,7 +632,7 @@ Measured on this box, `.venv\Scripts\python.exe`, `cedarpy` installed.
 | single-cell smoke | 3 trials | 2.0 s |
 | `probe_leak_demo.py` | 19 runs | ~3 s |
 
-Artifact: 139 KB JSON. Worker spawn 0.218 s mean. Everything offline,
+Artifact: 139 KB JSON. Worker spawn 0.205 s mean. Everything offline,
 deterministic, no network, no model.
 
 **Cheap enough to be a CI gate, and it should be one.** Recommended wiring: run
@@ -671,9 +684,9 @@ machine and commit in question is not evidence.
 - The shadow probe replays the declared adversary objective through the ordinary
   `evaluate` call site on every run, benign included, and probe contexts are
   trivially separable. Policy-instance lifetime alone flips 8 of 9 `matrix`
-  cells from leaked to contained (§6). **This is a live defect at `97b1fdb` and
+  cells from leaked to contained (§6). **This is a live defect at `5fde6eb` and
   is independent of Phase III.**
-- The Cedar:reference cost ratio is 167× in-process and 5.7× through a worker.
+- The Cedar:reference cost ratio is 177× in-process and 6.0× through a worker.
   A published claim depends on the architecture that produced it (§3).
 - `policy_digest` is a property of the process that computes it, since
   `_import_closure_sources` walks `sys.modules`. Measured to agree across
@@ -682,12 +695,13 @@ machine and commit in question is not evidence.
   currently accidental (§5).
 - The shipped blindness test compares two entries of two fields and asserts
   nothing about state (§6).
-- **Removing the `policy_digest` self-attestation override — a correct security
-  fix, in the working tree now — breaks `results/phase2/cedar_ablation.py`.**
-  Its `TimedPolicy` wrapper delegated `digest()`, so the published
-  `cedar-ablation.json` no longer regenerates its own `policy_digest` or
-  `trial_digest` values. Fix by instrumenting at `policy.base.evaluate` rather
-  than by wrapping the policy object — the same seam the worker needs (§1.8).
+- **R14 (`5fde6eb`), removing `policy_digest` self-attestation, is correct and
+  breaks `results/phase2/cedar_ablation.py`.** Its `TimedPolicy` delegated
+  `digest()`, so the published `cedar-ablation.json` no longer regenerates its
+  own `policy_digest` or `trial_digest` values — measured, not inferred. **This
+  is an open, unticketed Phase II regression.** Fix by instrumenting at
+  `policy.base.evaluate` rather than by wrapping the policy object — the same
+  seam the worker needs, so it is one fix, not two (§1.8).
 
 **Delivered:** a runnable, exercised, falsifiable equivalence protocol with two
 negative controls, a real subprocess worker, and a recorded `EQUIVALENT`

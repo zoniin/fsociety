@@ -283,6 +283,7 @@ class WorkerPolicy(Recorder):
         # processes agree on the digest is one of the things under test.
         inner = load_policy(policy_ref)
         super().__init__(inner)
+        self.__class__ = _transparent(type(self), inner)
         self.parent_digest = policy_digest(inner)
 
     def _rpc(self, msg: dict[str, Any]) -> dict[str, Any]:
@@ -312,20 +313,46 @@ class WorkerPolicy(Recorder):
             pass
 
 
+def _transparent(wrapper_cls: type, inner: Any) -> type:
+    """Make a wrapper digest as the policy it delegates to.
+
+    ``policy_digest`` walks the first-party import closure of
+    ``type(policy).__module__``. A wrapper therefore digests as *itself*, which
+    is why substituting the policy object silently changes ``policy.digest``,
+    ``run_id`` and ``trace_digest`` (§1.8 of the methodology note).
+
+    R14 correctly removed the ``digest()`` override, because a third-party
+    adapter must not choose its own hash. This is not that: the subclass cannot
+    name an arbitrary digest, only the module it delegates into, and the hash is
+    still computed from that module's source. It is a **stopgap for harness-side
+    instrumentation only**.
+
+    The real fix belongs in ``src``: apply timing and transport at the single
+    ``policy.base.evaluate`` call site instead of substituting the policy
+    object. ``results/phase2/cedar_ablation.py`` needs the same fix -- its
+    ``TimedPolicy`` wraps the same way, so the published ``cedar-ablation.json``
+    no longer regenerates its own ``policy_digest`` values.
+    """
+    return type(
+        wrapper_cls.__name__, (wrapper_cls,), {"__module__": type(inner).__module__}
+    )
+
+
 def make_arm(arm: str, policy_ref: str) -> Any:
     if arm == "raw":
         return load_policy(policy_ref)
-    if arm == "proxy":
-        return Recorder(load_policy(policy_ref))
-    if arm == "roundtrip":
-        return RoundTripPolicy(load_policy(policy_ref))
-    if arm == "naive":
-        return NaiveRoundTripPolicy(load_policy(policy_ref))
-    if arm == "lossy-readers":
-        return LossyReadersPolicy(load_policy(policy_ref))
     if arm == "worker":
         return WorkerPolicy(policy_ref)
-    raise SystemExit(f"unknown arm {arm!r}")
+    cls = {
+        "proxy": Recorder,
+        "roundtrip": RoundTripPolicy,
+        "naive": NaiveRoundTripPolicy,
+        "lossy-readers": LossyReadersPolicy,
+    }.get(arm)
+    if cls is None:
+        raise SystemExit(f"unknown arm {arm!r}")
+    inner = load_policy(policy_ref)
+    return _transparent(cls, inner)(inner)
 
 
 # =========================================================================
@@ -482,6 +509,15 @@ def blindness_probe(arm: str, scenario_id: str, policy_ref: str) -> dict[str, An
     }
 
 
+def _git(*args: str) -> str:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=REPO, capture_output=True, text=True, timeout=15
+        ).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def wrapper_transparency(policy_ref: str = "reference") -> dict[str, Any]:
     """Can this protocol measure anything at all on this commit?
 
@@ -503,7 +539,7 @@ def wrapper_transparency(policy_ref: str = "reference") -> dict[str, Any]:
     """
     inner = load_policy(policy_ref)
     direct = policy_digest(inner)
-    wrapped = policy_digest(Recorder(inner))
+    wrapped = policy_digest(_transparent(Recorder, inner)(inner))
     return {
         "transparent": direct == wrapped,
         "digest_direct": direct,
@@ -631,6 +667,13 @@ def main(argv: list[str] | None = None) -> int:
         "harness_version": __version__,
         "python_version": sys.version.split()[0],
         "platform": f"{platform.system()}-{platform.machine()}",
+        # A before/after protocol whose two halves cannot be shown to describe
+        # the same source is not a before/after protocol. HEAD moved under this
+        # analysis once already, and a sibling's uncommitted edit made the
+        # protocol unusable, so both the commit and the tree state are recorded.
+        "git_sha": _git("rev-parse", "HEAD"),
+        "git_dirty": bool(_git("status", "--porcelain")),
+        "wrapper_transparency": transparency,
         "baseline_arm": args.baseline,
         "arms": arms,
         "grid": {
