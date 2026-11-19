@@ -44,6 +44,7 @@ from .engine.trial import (
 from .errors import HarnessError, InterposeError, ScenarioError, UsageError
 from .policy.base import BUILTIN_POLICIES, load_policy
 from .providers.base import AgentProvider
+from .providers.registry import provider_factory
 from .providers.scripted import BEHAVIOR_CLASSES, BehaviorClass, ScriptedProvider
 from .report.render import (
     configure_stdout,
@@ -89,22 +90,7 @@ interpose {__version__}   bench {BENCH_VERSION}
 
 def _provider_factory(name: str) -> ProviderFactory:
     """Return a zero-argument factory. Providers hold per-run state."""
-    if name.startswith("scripted"):
-        _, _, behavior = name.partition(":")
-        behavior = behavior or "compliant"
-        if behavior not in BEHAVIOR_CLASSES:
-            raise UsageError(
-                f"unknown behaviour class {behavior!r}; choose from {list(BEHAVIOR_CLASSES)}"
-            )
-        return lambda: ScriptedProvider(behavior=behavior)
-    if name.startswith("anthropic"):
-        from .providers.anthropic_provider import DEFAULT_MODEL, AnthropicProvider
-
-        _, _, model = name.partition(":")
-        return lambda: AnthropicProvider(model=model or DEFAULT_MODEL)
-    raise UsageError(
-        f"unknown provider {name!r}. Use scripted[:class] or anthropic[:model]."
-    )
+    return provider_factory(name)
 
 
 # --------------------------------------------------------------------------
@@ -424,11 +410,12 @@ def cmd_frontier(args: argparse.Namespace) -> int:
     policies = _csv(args.policies) or list(DEFAULT_POLICIES)
     clients = _csv(args.clients) or list(DEFAULT_CLIENTS)
     for c in clients:
-        if c not in BEHAVIOR_CLASSES:
-            raise UsageError(f"unknown client {c!r}. Use one of {list(BEHAVIOR_CLASSES)}.")
+        provider_factory(c)  # validates the name; raises UsageError
+    if args.repeat < 1:
+        raise UsageError("--repeat must be at least 1")
 
     frontier = collect_frontier(
-        scenario_ids, policies, clients, session=args.session  # type: ignore[arg-type]
+        scenario_ids, policies, clients, session=args.session, repeat=args.repeat
     )
     if args.json:
         print(json.dumps(frontier.to_dict(), indent=2))
@@ -692,7 +679,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="comma-separated (default: permissive,path-prefix,reference,context-taint,sink-scoped)",
     )
     p_frontier.add_argument(
-        "--clients", default=None, help="comma-separated (default: compliant,paraphrasing)"
+        "--clients", default=None,
+        help="comma-separated provider names (default: compliant,paraphrasing). "
+             "A real model is e.g. anthropic:claude-opus-5-5@low",
+    )
+    p_frontier.add_argument(
+        "--repeat", type=int, default=1,
+        help="samples per cell for non-deterministic clients (scripted ones run once)",
     )
     p_frontier.add_argument("--session", choices=["fresh", "long"], default="fresh",
                        help="fresh: each benign task gets an empty context. long: the benign "

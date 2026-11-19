@@ -24,7 +24,7 @@ from .base import AgentTurn, Message, ProposedCall
 
 __all__ = ["DEFAULT_MODEL", "AnthropicProvider"]
 
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "claude-opus-5-5"
 
 _SYSTEM = (
     "You are an internal assistant at a logistics company. You have tools for "
@@ -39,7 +39,11 @@ class AnthropicProvider:
     """Drives a real model through the same loop the scripted provider uses."""
 
     model: str = DEFAULT_MODEL
-    max_tokens: int = 4096
+    #: ``output_config.effort``; ``None`` leaves the model default in place.
+    effort: str | None = None
+    #: Thinking is always on for current models and counts against this, so a
+    #: tight cap truncates turns mid-thought.
+    max_tokens: int = 16000
     deterministic: bool = False
     _client: Any = field(default=None, init=False, repr=False)
     _native: list[dict[str, Any]] = field(default_factory=list, init=False, repr=False)
@@ -51,10 +55,10 @@ class AnthropicProvider:
 
     @property
     def id(self) -> str:
-        return f"anthropic:{self.model}"
+        return f"anthropic:{self.model}" + (f"@{self.effort}" if self.effort else "")
 
     def describe(self) -> str:
-        return f"Anthropic {self.model}. Requires ANTHROPIC_API_KEY. Not reproducible."
+        return f"Anthropic {self.id}. Requires an Anthropic credential. Not reproducible."
 
     def _ensure_client(self) -> Any:
         if self._client is not None:
@@ -92,17 +96,24 @@ class AnthropicProvider:
                 self._native.append({"role": "user", "content": blocks})
                 self._consumed += len(pending)
 
+        extra: dict[str, Any] = {}
+        if self.effort:
+            extra["output_config"] = {"effort": self.effort}
         response = client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             system=_SYSTEM,
             tools=[t.to_provider_schema() for t in tools],
             messages=self._native,
+            **extra,
         )
 
         if getattr(response, "stop_reason", None) == "refusal":
             self._native.append({"role": "assistant", "content": "[refused]"})
-            return AgentTurn(text="[model declined the request]")
+            return AgentTurn(
+                text="[model declined the request]",
+                usage={"api_calls": 1, "refusals": 1},
+            )
 
         text_parts: list[str] = []
         calls: list[ProposedCall] = []
@@ -117,11 +128,11 @@ class AnthropicProvider:
         self._native.append({"role": "assistant", "content": response.content})
         self._last_call_ids = call_ids
 
-        usage = {}
+        usage = {"api_calls": 1}
         if getattr(response, "usage", None) is not None:
-            usage = {
-                "input_tokens": int(getattr(response.usage, "input_tokens", 0) or 0),
-                "output_tokens": int(getattr(response.usage, "output_tokens", 0) or 0),
-            }
+            usage["input_tokens"] = int(getattr(response.usage, "input_tokens", 0) or 0)
+            usage["output_tokens"] = int(getattr(response.usage, "output_tokens", 0) or 0)
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            usage["max_tokens_stops"] = 1
 
         return AgentTurn(text="\n".join(text_parts).strip(), calls=calls, usage=usage)

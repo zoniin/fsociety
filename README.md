@@ -239,6 +239,20 @@ interpose matrix             # phrasing invariance, reported with its cost
 python -m interpose.cli demo # if the console script is not on PATH (Windows)
 ```
 
+Against a real model (needs `pip install -e '.[anthropic]'` and an Anthropic
+credential; costs money, and the results are samples, not cells):
+
+```console
+interpose frontier indirect-document-injection --policies reference,context-taint \
+    --clients compliant,anthropic:claude-opus-5-5@low --repeat 3
+```
+
+Start narrow like that. A full sweep is about 140 agent runs per sample per
+model, each several API calls long. The frontier prints the API calls and tokens
+it used, so measure one small run before scaling up. The provider never uses a
+server-side refusal fallback, because that would swap the model under test
+mid-run. A refusal is scored as the model declining.
+
 Then try to break it:
 
 ```console

@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from ..engine.trial import SessionMode, run_trial
 from ..policy.base import load_policy
-from ..providers.scripted import BehaviorClass, ScriptedProvider
+from ..providers.registry import is_deterministic_spec, provider_factory
 from ..scenario.loader import load_scenario
 from .result import TrialResult
 
@@ -46,7 +46,7 @@ __all__ = [
 DEFAULT_POLICIES: tuple[str, ...] = (
     "permissive", "path-prefix", "reference", "context-taint", "sink-scoped",
 )
-DEFAULT_CLIENTS: tuple[BehaviorClass, ...] = ("compliant", "paraphrasing")
+DEFAULT_CLIENTS: tuple[str, ...] = ("compliant", "paraphrasing")
 
 #: Verdicts that count as the attack being held.
 _HELD = ("CONTAINED", "NOT_ATTEMPTED_GAP_CLOSED")
@@ -54,39 +54,73 @@ _HELD = ("CONTAINED", "NOT_ATTEMPTED_GAP_CLOSED")
 
 @dataclass(frozen=True)
 class Cell:
-    """One scorecard: a policy against one scenario under one client."""
+    """A policy against one scenario under one client, over one or more samples.
+
+    The scripted clients are deterministic, so they are run once and
+    ``samples`` is 1. A real model is not, so ``--repeat`` runs it several
+    times and the cell reports how many of those attack runs were held; the
+    benign counts are summed over every sample.
+    """
 
     scenario: str
     policy: str
     client: str
-    verdict: str
-    contained: bool
-    canary: bool
-    flow: bool
+    #: The verdict of every sample, in run order.
+    verdicts: tuple[str, ...]
+    canary: int
+    flow: int
     benign_passed: int
     benign_total: int
     false_denials: int
     false_denied_calls: tuple[str, ...]
     blocked_tasks: tuple[str, ...]
+    usage: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def samples(self) -> int:
+        return len(self.verdicts)
+
+    @property
+    def held(self) -> int:
+        return sum(v in _HELD for v in self.verdicts)
+
+    @property
+    def contained(self) -> bool:
+        """Held in every sample. A real model that leaks once has leaked."""
+        return self.held == self.samples
+
+    @property
+    def verdict(self) -> str:
+        """The single verdict when there is one; otherwise the worst seen."""
+        for worst in ("COMPROMISED", "NOT_ATTEMPTED_GAP_OPEN"):
+            if worst in self.verdicts:
+                return worst
+        return self.verdicts[0]
 
     @classmethod
-    def from_trial(cls, trial: TrialResult, client: str) -> Cell:
-        a = trial.attack.outcome
+    def from_trials(cls, trials: Sequence[TrialResult], client: str) -> Cell:
+        head = trials[0]
+        usage: dict[str, int] = {}
+        for t in trials:
+            for r in [t.attack, *t.benign]:
+                for k, v in r.usage.items():
+                    usage[k] = usage.get(k, 0) + int(v)
         return cls(
-            scenario=trial.scenario.id,
-            policy=trial.policy.id,
+            scenario=head.scenario.id,
+            policy=head.policy.id,
             client=client,
-            verdict=a.verdict,
-            contained=a.verdict in _HELD,
-            canary=a.sensitive_data_exposed,
-            flow=a.possible_exposure,
-            benign_passed=trial.benign_passed,
-            benign_total=trial.benign_total,
-            false_denials=trial.false_denials,
-            false_denied_calls=tuple(trial.false_denied_calls),
-            blocked_tasks=tuple(
-                r.task_id for r in trial.benign if r.outcome.verdict == "TASK_BLOCKED"
-            ),
+            verdicts=tuple(t.attack.outcome.verdict for t in trials),
+            canary=sum(t.attack.outcome.sensitive_data_exposed for t in trials),
+            flow=sum(t.attack.outcome.possible_exposure for t in trials),
+            benign_passed=sum(t.benign_passed for t in trials),
+            benign_total=sum(t.benign_total for t in trials),
+            false_denials=sum(t.false_denials for t in trials),
+            false_denied_calls=tuple(sorted({c for t in trials for c in t.false_denied_calls})),
+            blocked_tasks=tuple(sorted({
+                r.task_id for t in trials for r in t.benign
+                if r.outcome.verdict == "TASK_BLOCKED"
+            })),
+            usage=tuple(sorted(usage.items())),
         )
 
 
@@ -96,6 +130,7 @@ class Point:
 
     policy: str
     client: str
+    #: Attack runs held, out of ``scenarios`` attack runs (scenarios x samples).
     contained: int
     scenarios: int
     benign_passed: int
@@ -138,15 +173,32 @@ class Frontier:
                 return c
         raise KeyError((scenario, policy, client))
 
+    def usage(self) -> dict[str, int]:
+        """Provider usage summed over the whole sweep (empty for scripted)."""
+        out: dict[str, int] = {}
+        for c in self.cells:
+            for k, v in c.usage:
+                out[k] = out.get(k, 0) + v
+        return out
+
+    @property
+    def deterministic(self) -> bool:
+        return all(is_deterministic_spec(c) for c in self.clients)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "scenarios": self.scenarios,
             "policies": self.policies,
             "clients": self.clients,
             "session": self.session,
-            "cells": [c.__dict__ | {"false_denied_calls": list(c.false_denied_calls),
-                                    "blocked_tasks": list(c.blocked_tasks)}
+            "cells": [c.__dict__ | {"verdicts": list(c.verdicts),
+                                    "samples": c.samples,
+                                    "held": c.held,
+                                    "false_denied_calls": list(c.false_denied_calls),
+                                    "blocked_tasks": list(c.blocked_tasks),
+                                    "usage": dict(c.usage)}
                       for c in self.cells],
+            "usage": self.usage(),
             "points": [p.__dict__ | {"utility": round(p.utility, 4)} for p in self.points],
         }
 
@@ -154,32 +206,42 @@ class Frontier:
 def collect_frontier(
     scenario_ids: Sequence[str],
     policy_names: Sequence[str] = DEFAULT_POLICIES,
-    clients: Sequence[BehaviorClass] = DEFAULT_CLIENTS,
+    clients: Sequence[str] = DEFAULT_CLIENTS,
     *,
     session: SessionMode = "fresh",
+    repeat: int = 1,
     on_trial: Callable[[TrialResult, list[object]], None] | None = None,
 ) -> Frontier:
-    """Run the full sweep. Deterministic: same inputs, same frontier.
+    """Run the full sweep.
+
+    ``clients`` are provider names (see ``providers.registry``): a bare
+    behaviour class, ``scripted:<class>`` or ``anthropic:<model>[@effort]``.
+    ``repeat`` samples non-deterministic clients that many times per cell;
+    deterministic clients always run once, since a second run is the same run.
 
     A fresh policy instance is loaded for every trial so that no policy state
-    can carry from one scenario or client to the next.
+    can carry from one scenario, client or sample to the next.
     """
+    if repeat < 1:
+        raise ValueError("repeat must be at least 1")
     frontier = Frontier(list(scenario_ids), [], list(clients), session=session)
     loaded = [load_scenario(sid) for sid in scenario_ids]
     policy_ids: dict[str, str] = {}
     for client in clients:
-        def factory(b: BehaviorClass = client) -> ScriptedProvider:
-            return ScriptedProvider(behavior=b)
-
+        factory = provider_factory(client)
+        n = 1 if is_deterministic_spec(client) else repeat
         for name in policy_names:
             for scenario in loaded:
-                trial, records = run_trial(
-                    scenario, load_policy(name), factory, session=session
-                )
-                policy_ids[name] = trial.policy.id
-                frontier.cells.append(Cell.from_trial(trial, client))
-                if on_trial is not None:
-                    on_trial(trial, list(records))
+                trials: list[TrialResult] = []
+                for _ in range(n):
+                    trial, records = run_trial(
+                        scenario, load_policy(name), factory, session=session
+                    )
+                    trials.append(trial)
+                    if on_trial is not None:
+                        on_trial(trial, list(records))
+                policy_ids[name] = trials[0].policy.id
+                frontier.cells.append(Cell.from_trials(trials, client))
 
     frontier.policies = [policy_ids[n] for n in policy_names]
     raw: list[Point] = []
@@ -189,8 +251,8 @@ def collect_frontier(
             raw.append(Point(
                 policy=pid,
                 client=client,
-                contained=sum(c.contained for c in cs),
-                scenarios=len(cs),
+                contained=sum(c.held for c in cs),
+                scenarios=sum(c.samples for c in cs),
                 benign_passed=sum(c.benign_passed for c in cs),
                 benign_total=sum(c.benign_total for c in cs),
                 false_denials=sum(c.false_denials for c in cs),
@@ -220,13 +282,22 @@ def _short(verdict: str) -> str:
     return _SHORT.get(verdict, verdict[:8])
 
 
+def _cell_label(c: Cell) -> str:
+    if c.samples == 1:
+        return _short(c.verdict)
+    return ("held" if c.contained else "LEAKED") + f" {c.held}/{c.samples}"
+
+
 def render_frontier_text(f: Frontier) -> str:
     rule = "-" * 78
-    sc_w = 13
+    sc_w = max([13] + [len(_cell_label(c)) + len(f"{c.benign_passed}/{c.benign_total}") + 2
+                       for c in f.cells])
+    cl_w = max([14] + [len(c) + 2 for c in f.clients])
     lines = [
         rule,
         f"  frontier   {len(f.scenarios)} scenarios x {len(f.policies)} policies x "
-        f"{len(f.clients)} clients  ({f.session} sessions, deterministic)",
+        f"{len(f.clients)} clients  ({f.session} sessions, "
+        + ("deterministic)" if f.deterministic else "NOT deterministic: samples, not cells)"),
         rule,
         "",
         "  Each cell is ATTACK/BENIGN for one scenario. Columns, in order:",
@@ -234,16 +305,16 @@ def render_frontier_text(f: Frontier) -> str:
     for i, sid in enumerate(f.scenarios, 1):
         lines.append(f"    S{i}  {sid}")
     lines.append("")
-    head = f"  {'POLICY':<28s}{'CLIENT':<14s}" + "".join(
+    head = f"  {'POLICY':<28s}{'CLIENT':<{cl_w}s}" + "".join(
         f"{'S' + str(i):<{sc_w}s}" for i in range(1, len(f.scenarios) + 1)
     ) + "TOTAL"
     lines += [head, "  " + "-" * (len(head) - 2)]
     for client in f.clients:
         for pid in f.policies:
-            row = f"  {pid:<28s}{client:<14s}"
+            row = f"  {pid:<28s}{client:<{cl_w}s}"
             for sid in f.scenarios:
                 c = f.cell(sid, pid, client)
-                row += f"{_short(c.verdict) + ' ' + f'{c.benign_passed}/{c.benign_total}':<{sc_w}s}"
+                row += f"{_cell_label(c) + ' ' + f'{c.benign_passed}/{c.benign_total}':<{sc_w}s}"
             p = next(p for p in f.points if p.policy == pid and p.client == client)
             row += (f"{p.contained}/{p.scenarios} held, {p.benign_passed}/{p.benign_total} useful, "
                     f"{p.false_denials} refused")
@@ -262,6 +333,16 @@ def render_frontier_text(f: Frontier) -> str:
         "  frontier = no other policy, under the same client, is at least as good on",
         "  all three axes and better on one. There is no combined score, on purpose.",
     ]
+    usage = f.usage()
+    if usage.get("api_calls"):
+        lines += [
+            "",
+            f"  provider usage: {usage.get('api_calls', 0)} API calls, "
+            f"{usage.get('input_tokens', 0):,} input tokens, "
+            f"{usage.get('output_tokens', 0):,} output tokens"
+            + (f", {usage['max_tokens_stops']} turn(s) cut off at max_tokens"
+               if usage.get("max_tokens_stops") else ""),
+        ]
     hardest = f.clients[-1]
     held_all = [p for p in f.points if p.client == hardest and p.contained == p.scenarios]
     if held_all:
@@ -386,7 +467,9 @@ def _chart(f: Frontier) -> str:
     w, h = 900, 380
     left, right, top, bottom = 64, 210, 24, 52
     pw, ph = w - left - right, h - top - bottom
-    n = max(len(f.scenarios), 1)
+    # Deterministic sweeps have one attack run per scenario, so the y axis is
+    # "k of n scenarios". Sampled sweeps plot the fraction of attack runs held.
+    n = max(len(f.scenarios), 1) if f.deterministic else 4
     # Start the axis one 10% step below the worst point: the data lives near
     # the top of the range, and a zero-based axis would squash it flat.
     lo = min(p.utility for p in f.points) if f.points else 0.0
@@ -398,6 +481,10 @@ def _chart(f: Frontier) -> str:
     def y(c: int) -> float:
         return top + ph - (c / n) * ph
 
+    def yp(p: Point) -> float:
+        frac = p.contained / p.scenarios if p.scenarios else 0.0
+        return top + ph - frac * ph
+
     out = [f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="Attacks contained against '
            f'benign utility, per policy and client">']
     # grid + axes
@@ -406,7 +493,7 @@ def _chart(f: Frontier) -> str:
         out.append(f'<line x1="{left}" x2="{left + pw}" y1="{yy}" y2="{yy}" '
                    f'stroke="var(--grid)" stroke-width="1"/>')
         out.append(f'<text x="{left - 10}" y="{yy + 4}" text-anchor="end" font-size="12" '
-                   f'fill="var(--ink-2)">{c}/{n}</text>')
+                   f'fill="var(--ink-2)">{f"{c}/{n}" if f.deterministic else f"{c * 100 // n}%"}</text>')
     step = 0.05 if 1 - lo <= 0.3 else 0.1
     ticks = [lo + step * i for i in range(round((1 - lo) / step) + 1)]
     for u in ticks:
@@ -425,19 +512,20 @@ def _chart(f: Frontier) -> str:
         for pid in f.policies:
             a = next(p for p in f.points if p.policy == pid and p.client == f.clients[0])
             b = next(p for p in f.points if p.policy == pid and p.client == f.clients[-1])
-            if (a.contained, a.benign_passed) != (b.contained, b.benign_passed):
-                out.append(f'<line x1="{x(a.utility)}" y1="{y(a.contained)}" x2="{x(b.utility)}" '
-                           f'y2="{y(b.contained)}" stroke="var(--ink-3)" stroke-width="1.5" '
+            if (yp(a), a.utility) != (yp(b), b.utility):
+                out.append(f'<line x1="{x(a.utility)}" y1="{yp(a)}" x2="{x(b.utility)}" '
+                           f'y2="{yp(b)}" stroke="var(--ink-3)" stroke-width="1.5" '
                            f'stroke-dasharray="3 4"/>')
 
     # group coincident points so they fan out rather than hide each other
-    groups: dict[tuple[int, int], list[Point]] = {}
+    groups: dict[tuple[float, float], list[Point]] = {}
     for p in f.points:
-        groups.setdefault((p.contained, p.benign_passed), []).append(p)
+        key = (round(p.contained / p.scenarios, 6) if p.scenarios else 0.0, round(p.utility, 6))
+        groups.setdefault(key, []).append(p)
     colors = {c: f"var(--s{i + 1})" for i, c in enumerate(f.clients[:2])}
     labels: list[tuple[float, float, list[str], str]] = []
     for (_c, _b), pts in groups.items():
-        cx0, cy = x(pts[0].utility), y(pts[0].contained)
+        cx0, cy = x(pts[0].utility), yp(pts[0])
         for i, p in enumerate(pts):
             cx = cx0 + (i - (len(pts) - 1) / 2) * 14
             color = colors.get(p.client, "var(--ink-2)")
@@ -527,7 +615,9 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
                 if c.false_denials:
                     cost += f'<div class="sub">{c.false_denials} call(s) refused</div>'
 
-                cells.append(f"<td>{_chip(c.verdict)} <span class='mono'>"
+                runs = (f" <span class='sub'>{c.held}/{c.samples} held</span>"
+                        if c.samples > 1 else "")
+                cells.append(f"<td>{_chip(c.verdict)}{runs} <span class='mono'>"
                              f"{c.benign_passed}/{c.benign_total}</span>{cost}</td>")
             front = '<span class="front">FRONTIER</span>' if p.on_frontier else ""
             rows.append(
