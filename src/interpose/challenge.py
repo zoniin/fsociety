@@ -80,10 +80,79 @@ def build_freeze_record() -> dict[str, Any]:
     }
 
 
-def write_freeze(path: Path = FREEZE_FILE) -> dict[str, Any]:
-    record = build_freeze_record()
+def write_freeze(
+    path: Path = FREEZE_FILE,
+    *,
+    refreeze: frozenset[str] = frozenset(),
+    reason: str = "",
+    today: str | None = None,
+) -> dict[str, Any]:
+    """Add newly installed policies to the record. Never silently move one.
+
+    Append-only by default. A policy whose digest changed since it was frozen
+    is refused unless it is named in ``refreeze``, and a re-freeze needs a
+    ``reason``, which is logged in the record with the date and the old and
+    new digests.
+
+    This used to rewrite every entry from scratch. Adding one policy then
+    re-froze all the others whenever a shared module in their import closure
+    had changed, and nothing said so. That happened (2026-11-19, logged in the
+    record): an additive field on ``DecisionContext`` moved six digests during
+    a commit about something else.
+    """
+    current = build_freeze_record()
+    if not path.is_file():
+        path.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8", newline="\n")
+        return current
+
+    record = read_freeze(path)
+    frozen: dict[str, Any] = dict(record.get("policies", {}))
+    unknown = refreeze - set(current["policies"]) - {"all"}
+    if unknown:
+        raise UsageError(f"--refreeze names policies that are not installed: {sorted(unknown)}")
+
+    changed = sorted(
+        pid for pid, entry in current["policies"].items()
+        if pid in frozen and (entry["digest"] != frozen[pid].get("digest")
+                              or entry["version"] != frozen[pid].get("version"))
+    )
+    allowed = set(changed) if "all" in refreeze else set(refreeze)
+    refused = [pid for pid in changed if pid not in allowed]
+    if refused:
+        raise UsageError(
+            "these frozen policies changed since they were frozen: "
+            + ", ".join(refused)
+            + ". Revert them, or re-freeze deliberately with "
+            "--refreeze <id>[,<id>] --reason '<why, and whether behaviour changed>'."
+        )
+    moved = [pid for pid in changed if pid in allowed]
+    if moved and not reason.strip():
+        raise UsageError("a re-freeze needs --reason: it is logged in the freeze record")
+
+    for pid, entry in current["policies"].items():
+        if pid not in frozen or pid in moved:
+            frozen[pid] = entry
+    if moved:
+        log = list(record.get("refreezes", []))
+        log.append({
+            "date": today or _today(),
+            "policies": {
+                pid: {"from": record["policies"][pid].get("digest"),
+                      "to": current["policies"][pid]["digest"]}
+                for pid in moved
+            },
+            "reason": reason.strip(),
+        })
+        record["refreezes"] = log
+    record["policies"] = dict(sorted(frozen.items()))
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
     return record
+
+
+def _today() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).date().isoformat()
 
 
 def read_freeze(path: Path = FREEZE_FILE) -> dict[str, Any]:

@@ -455,7 +455,8 @@ def cmd_freeze(args: argparse.Namespace) -> int:
         print("  old bytes are not comparable to results scored against the new ones.")
         return 1
 
-    record = write_freeze(path)
+    refreeze = frozenset(_csv(args.refreeze))
+    record = write_freeze(path, refreeze=refreeze, reason=args.reason or "")
     print(f"wrote {path}")
     for policy_id, entry in sorted(record["policies"].items()):
         print(f"  {policy_id:<28s} {entry['digest']}")
@@ -702,6 +703,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--check", action="store_true", help="verify instead of writing; exit 1 on drift"
     )
     p_freeze.add_argument("--file", default=str(FREEZE_FILE))
+    p_freeze.add_argument(
+        "--refreeze", default=None, metavar="ID[,ID]",
+        help="policy ids whose changed digests may be overwritten ('all' for every changed "
+             "one). Without it, freeze only adds new policies and refuses to move any.",
+    )
+    p_freeze.add_argument("--reason", default=None,
+                          help="required with --refreeze; logged in the freeze record")
     p_freeze.set_defaults(func=cmd_freeze)
 
     p_challenge = sub.add_parser(
