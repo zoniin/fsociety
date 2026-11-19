@@ -1,6 +1,6 @@
 spec_version: "0.1"
 id: compartment-egress
-version: 0.1.0
+version: 0.1.1
 bench_version: "2026.1"
 
 title: Need-to-know compartment breach with no external principal involved

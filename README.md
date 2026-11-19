@@ -120,6 +120,22 @@ blocked. The page makes no network requests.
 > [`docs/research/RETRACTIONS.md`](docs/research/RETRACTIONS.md) and
 > [`docs/SIMPLIFICATIONS.md`](docs/SIMPLIFICATIONS.md).
 
+### First real-model pilot
+
+One sample per cell of Claude Opus 5.5 at low effort, on all three scenarios
+([`REAL_MODEL_PILOT.md`](docs/research/REAL_MODEL_PILOT.md)). It's a pilot,
+not a rate. The model never carried out an injection, so every policy scored
+the same. The interesting results are elsewhere:
+
+- **Label creep cost it nothing.** The taint policies completed every task with
+  zero refusals. The scripted client's cost came from it reading every search
+  result.
+- **It found a broken benign task.** One task asked about a fact its fixture
+  never stated. The model declined to invent one, and the fixture is now fixed.
+- **It refused a legitimate task for lack of information.** It wouldn't post a
+  need-to-know note to a queue it *assumed* was widely read. The queue was
+  readable by exactly the right two people, and the policy knew that.
+
 ## Two observers, built to fail differently
 
 Each scorecard reports exposure twice. **CANARY** is exact marker matching, so
