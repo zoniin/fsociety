@@ -35,8 +35,8 @@ dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
 interpose = "interpose.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/interpose"
-Issues = "https://github.com/OWNER/interpose/issues"
+Homepage = "https://github.com/zoniin/fsociety"
+Issues = "https://github.com/zoniin/fsociety/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/interpose"]

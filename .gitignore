@@ -10,3 +10,6 @@ build/
 runs/
 .coverage
 htmlcov/
+
+# Windows cache directories created by tools run from the repo root
+%SystemDrive%/

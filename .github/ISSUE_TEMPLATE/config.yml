@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security report
-    url: https://github.com/OWNER/interpose/security/advisories/new
+    url: https://github.com/zoniin/fsociety/security/advisories/new
     about: >-
       Report a vulnerability privately. Note first: the simulated organization
       being insecure, and a scenario successfully injecting the simulated
