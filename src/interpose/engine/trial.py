@@ -15,22 +15,38 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from ..events import EventLog
 from ..policy.base import SecurityPolicy, as_policy_factory, policy_digest
+from ..provenance import Source
 from ..providers.base import AgentProvider
 from ..report.result import ArtifactRef, OutcomeView, RunResult, TrialResult
 from ..scenario.loader import LoadedScenario
 from ..scenario.spec import BenignTask
 from .runner import RunConfig, Runner, RunRecord
 
-__all__ = ["ProviderFactory", "run_single", "run_trial", "to_run_result", "write_run_artifacts"]
+__all__ = [
+    "SESSION_MODES",
+    "ProviderFactory",
+    "SessionMode",
+    "run_single",
+    "run_trial",
+    "to_run_result",
+    "write_run_artifacts",
+]
 
 #: A provider must be fresh for every run: providers carry per-run state, and
 #: reusing one would leak a previous run's transcript into the next. Passing a
 #: factory rather than an instance makes that impossible to get wrong.
 ProviderFactory: TypeAlias = Callable[[], AgentProvider]
+
+#: ``fresh``: every benign task starts with an empty context (the default, and
+#: what every result before long-session mode measured). ``long``: the benign
+#: suite runs as one session, in declared order, and each task starts with the
+#: context labels every earlier task left behind. SIMPL-0015.
+SessionMode: TypeAlias = Literal["fresh", "long"]
+SESSION_MODES: tuple[SessionMode, ...] = ("fresh", "long")
 
 
 def to_run_result(record: RunRecord, scenario: LoadedScenario) -> RunResult:
@@ -68,6 +84,7 @@ def run_single(
     benign_task: BenignTask | None = None,
     prompt_variant: int | None = None,
     payload_variant: int | None = None,
+    carried_sources: dict[Source, str] | None = None,
 ) -> RunRecord:
     # INV-LIFECYCLE-1: this run gets its own policy instance.
     # INV-LIFECYCLE-2: the shadow probe gets a *different* one.
@@ -87,6 +104,7 @@ def run_single(
             benign_task=benign_task,
             prompt_variant=prompt_variant,
             payload_variant=payload_variant,
+            carried_sources=dict(carried_sources or {}),
         )
     ).run()
 
@@ -98,8 +116,18 @@ def run_trial(
     *,
     prompt_variant: int | None = None,
     payload_variant: int | None = None,
+    session: SessionMode = "fresh",
 ) -> tuple[TrialResult, list[RunRecord]]:
-    """Run the attack and the full benign suite under one policy."""
+    """Run the attack and the full benign suite under one policy.
+
+    In ``long`` session mode the benign suite shares one context, so a policy
+    that decides on context labels pays for everything read earlier in the
+    session. The attack run always starts fresh: carrying benign labels into it
+    could only make a context-level policy stricter, so a fresh attack run is
+    the conservative reading of containment.
+    """
+    if session not in SESSION_MODES:
+        raise ValueError(f"unknown session mode {session!r}")
     records: list[RunRecord] = []
 
     attack = run_single(
@@ -112,6 +140,7 @@ def run_trial(
     records.append(attack)
 
     benign: list[RunResult] = []
+    carried: dict[Source, str] = {}
     for task in scenario.spec.benign:
         record = run_single(
             scenario,
@@ -119,9 +148,13 @@ def run_trial(
             make_provider,
             benign_task=task,
             prompt_variant=prompt_variant if task.id == scenario.spec.benign[0].id else None,
+            carried_sources=carried if session == "long" else None,
         )
         records.append(record)
         benign.append(to_run_result(record, scenario))
+        if session == "long":
+            for source in record.context_sources:
+                carried.setdefault(source, task.id)
 
     attack_result = to_run_result(attack, scenario)
     trial = TrialResult(
@@ -131,6 +164,7 @@ def run_trial(
         deterministic=attack_result.deterministic,
         attack=attack_result,
         benign=benign,
+        session=session,
     )
     return trial, records
 

@@ -26,7 +26,7 @@ import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from ..engine.trial import run_trial
+from ..engine.trial import SessionMode, run_trial
 from ..policy.base import load_policy
 from ..providers.scripted import BehaviorClass, ScriptedProvider
 from ..scenario.loader import load_scenario
@@ -116,6 +116,7 @@ class Frontier:
     scenarios: list[str]
     policies: list[str]
     clients: list[str]
+    session: str = "fresh"
     cells: list[Cell] = field(default_factory=list)
     points: list[Point] = field(default_factory=list)
 
@@ -130,6 +131,7 @@ class Frontier:
             "scenarios": self.scenarios,
             "policies": self.policies,
             "clients": self.clients,
+            "session": self.session,
             "cells": [c.__dict__ | {"false_denied_calls": list(c.false_denied_calls),
                                     "blocked_tasks": list(c.blocked_tasks)}
                       for c in self.cells],
@@ -142,6 +144,7 @@ def collect_frontier(
     policy_names: Sequence[str] = DEFAULT_POLICIES,
     clients: Sequence[BehaviorClass] = DEFAULT_CLIENTS,
     *,
+    session: SessionMode = "fresh",
     on_trial: Callable[[TrialResult, list[object]], None] | None = None,
 ) -> Frontier:
     """Run the full sweep. Deterministic: same inputs, same frontier.
@@ -149,7 +152,7 @@ def collect_frontier(
     A fresh policy instance is loaded for every trial so that no policy state
     can carry from one scenario or client to the next.
     """
-    frontier = Frontier(list(scenario_ids), [], list(clients))
+    frontier = Frontier(list(scenario_ids), [], list(clients), session=session)
     loaded = [load_scenario(sid) for sid in scenario_ids]
     policy_ids: dict[str, str] = {}
     for client in clients:
@@ -158,7 +161,9 @@ def collect_frontier(
 
         for name in policy_names:
             for scenario in loaded:
-                trial, records = run_trial(scenario, load_policy(name), factory)
+                trial, records = run_trial(
+                    scenario, load_policy(name), factory, session=session
+                )
                 policy_ids[name] = trial.policy.id
                 frontier.cells.append(Cell.from_trial(trial, client))
                 if on_trial is not None:
@@ -209,7 +214,7 @@ def render_frontier_text(f: Frontier) -> str:
     lines = [
         rule,
         f"  frontier   {len(f.scenarios)} scenarios x {len(f.policies)} policies x "
-        f"{len(f.clients)} clients  (deterministic)",
+        f"{len(f.clients)} clients  ({f.session} sessions, deterministic)",
         rule,
         "",
         "  Each cell is ATTACK/BENIGN for one scenario. Columns, in order:",
@@ -515,6 +520,7 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
 <p class="lede">Every bundled scenario, every policy, under a client that pastes what it
 read verbatim and one that restates the same facts in its own words. Containment and
 utility are measured on the same corpus and never merged into one score.</p>
+<p>Benign suite run as <b>{"one long session per scenario: each task inherits what earlier tasks read" if f.session == "long" else "fresh sessions: every task starts with an empty context"}</b>.</p>
 <div class="tiles">{"".join(f'<div class="tile"><b>{html.escape(a)}</b><span>{html.escape(b)}</span></div>' for a, b in tiles)}</div>
 
 <h2>Containment against cost</h2>

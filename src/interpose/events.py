@@ -40,6 +40,7 @@ __all__ = [
     "AgentMessage",
     "AnyEvent",
     "ContentIngested",
+    "ContextCarried",
     "DetectorTriggered",
     "Event",
     "EventLog",
@@ -134,6 +135,22 @@ class ContentIngested(Event):
     classification: str
     content_digest: str
     byte_length: int
+
+
+class ContextCarried(Event):
+    """A source already in the session context before this task began.
+
+    Emitted only in long-session mode, once per carried source, before the
+    first turn. It is the label a previous task in the same session left
+    behind; no content is re-read and nothing is shown to the agent.
+    """
+
+    type: Literal["context.carried"] = "context.carried"
+    unit_id: str
+    resource_uri: str
+    trust: str
+    classification: str
+    from_task: str
 
 
 class AgentMessage(Event):
@@ -256,6 +273,7 @@ AnyEvent = Annotated[
     | WorldInitialized
     | TaskAssigned
     | ContentIngested
+    | ContextCarried
     | AgentMessage
     | ToolProposed
     | PolicyEvaluated

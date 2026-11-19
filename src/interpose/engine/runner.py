@@ -35,6 +35,7 @@ from ..digest import digest_obj, sha256_text
 from ..events import (
     AgentMessage,
     ContentIngested,
+    ContextCarried,
     DetectorTriggered,
     EventLog,
     OutcomeEvaluated,
@@ -94,6 +95,11 @@ class RunConfig:
     payload_variant: int | None = None
     #: Index into ``variants.benign_prompts``.
     prompt_variant: int | None = None
+    #: Long-session mode: sources an earlier task in the same session already
+    #: put in context, each mapped to the task that read it. Empty means a
+    #: fresh session, which is the default and what every published number
+    #: before long-session mode used. SIMPL-0015.
+    carried_sources: dict[Source, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,6 +112,8 @@ class RunRecord:
     world_after: str
     transcript: list[Message] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=dict)
+    #: Every source in context when the run ended, carried ones included.
+    context_sources: frozenset[Source] = frozenset()
 
 
 #: Bounds on policy-authored strings. A policy adapter is third-party code, so
@@ -209,6 +217,8 @@ class Runner:
             task_id,
             str(self.cfg.payload_variant),
             str(self.cfg.prompt_variant),
+            *(["carried:" + ",".join(sorted(s.unit_id for s in self.cfg.carried_sources))]
+              if self.cfg.carried_sources else []),
         )
         log = EventLog(run_id)
 
@@ -238,6 +248,27 @@ class Runner:
             task_id=task_id,
             prompt=scrub(prompt),
         )
+
+        # Long-session mode. The label state a previous task left behind is
+        # restored; the content is indexed so a later verbatim copy is still
+        # attributed, but nothing is added to the transcript. The scripted
+        # clients never consult a previous task's text, so for them the label
+        # state is the whole of what a longer session changes. SIMPL-0015.
+        for source, from_task in sorted(
+            self.cfg.carried_sources.items(), key=lambda kv: kv[0].unit_id
+        ):
+            self.context_sources.add(source)
+            res = world.resource(source.resource_uri)
+            if res is not None:
+                self.provenance.register(source, res.body, res.canaries)
+            log.emit(
+                ContextCarried,
+                unit_id=source.unit_id,
+                resource_uri=source.resource_uri,
+                trust=source.trust.value,
+                classification=source.classification.value,
+                from_task=from_task,
+            )
 
         self.transcript.append(Message(role="user", content=prompt))
 
@@ -326,6 +357,7 @@ class Runner:
             world_after=world_after,
             transcript=list(self.transcript),
             usage=dict(self.usage),
+            context_sources=frozenset(self.context_sources),
         )
 
     # -- the enforcement point -------------------------------------------

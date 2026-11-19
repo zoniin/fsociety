@@ -368,3 +368,32 @@ challenge results reproduced by CI from a checkout of the tagged revision rather
 than the working tree. None of that helps until a third party actually runs a
 challenge — which is the load-bearing gap, and no amount of cryptography closes
 it.
+
+---
+
+## SIMPL-0015 — A long session is modelled as carried labels, not a carried transcript
+
+- **code_ref**: `src/interpose/engine/trial.py::run_trial` (`session="long"`), `RunConfig.carried_sources`
+- **status**: open · **hidden_by**: client simplicity · **bias_direction**: understates the cost of context-level policies only for clients that consult earlier tasks
+- **affects**: every `--session long` result; `context-taint` most of all
+
+**What we do.** In long-session mode the benign suite runs in its declared
+order as one session. Each task starts with every context label the earlier
+tasks left behind, emitted as `context.carried` events, and the carried
+sources' content is indexed so a later verbatim copy is still attributed. The
+earlier tasks' *messages* are not replayed into the transcript.
+
+**What that hides.** A real long-lived agent carries its whole transcript, and
+a later task can draw on an earlier one's content. The scripted clients never
+consult a previous task's text, so for them the label state is the whole of
+what a longer session changes, and for a policy that decides on labels the
+model is exact. For a real model, it is not: the transcript would also change
+what the agent does. The attack run always starts fresh, which can only make a
+context-level policy look *less* strict than it would be mid-session.
+
+Task order matters and is fixed to the order the scenario declares. A
+different order is a different session and can give a different number.
+
+**Path to fidelity.** A multi-task transcript in the runner and providers that
+handle more than one user turn, then sessions sampled over task orders, with
+the order recorded in the artifact.

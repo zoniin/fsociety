@@ -157,6 +157,9 @@ class TrialResult(_Model):
     deterministic: bool
     attack: RunResult
     benign: list[RunResult]
+    #: ``fresh`` or ``long``; see ``engine.trial.SessionMode``. Defaults to
+    #: fresh so artifacts written before long-session mode still load.
+    session: str = "fresh"
 
     # -- derived, and always reported together ---------------------------
 

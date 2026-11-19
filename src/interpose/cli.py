@@ -185,7 +185,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             record.log.write(DEFAULT_RUNS_DIR / record.run_id / "events.jsonl")
         return 0
 
-    trial, records = run_trial(scenario, policy, factory)
+    trial, records = run_trial(scenario, policy, factory, session=args.session)
     if args.json:
         print(trial.model_dump_json(indent=2))
     else:
@@ -427,7 +427,9 @@ def cmd_frontier(args: argparse.Namespace) -> int:
         if c not in BEHAVIOR_CLASSES:
             raise UsageError(f"unknown client {c!r}. Use one of {list(BEHAVIOR_CLASSES)}.")
 
-    frontier = collect_frontier(scenario_ids, policies, clients)  # type: ignore[arg-type]
+    frontier = collect_frontier(
+        scenario_ids, policies, clients, session=args.session  # type: ignore[arg-type]
+    )
     if args.json:
         print(json.dumps(frontier.to_dict(), indent=2))
     else:
@@ -650,6 +652,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p_run)
     p_run.add_argument("--attack-only", action="store_true",
                        help="single attack run; prints a trace, not a scorecard")
+    p_run.add_argument("--session", choices=["fresh", "long"], default="fresh",
+                       help="fresh: each benign task gets an empty context. long: the benign "
+                            "suite is one session, and each task inherits earlier taint")
     p_run.add_argument("--save", action="store_true", help="write artifacts under runs/")
     p_run.add_argument("--no-save", action="store_true", help="do not write artifacts")
     p_run.set_defaults(func=cmd_run)
@@ -689,6 +694,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_frontier.add_argument(
         "--clients", default=None, help="comma-separated (default: compliant,paraphrasing)"
     )
+    p_frontier.add_argument("--session", choices=["fresh", "long"], default="fresh",
+                       help="fresh: each benign task gets an empty context. long: the benign "
+                            "suite is one session, and each task inherits earlier taint")
     p_frontier.add_argument("--html", default=None, metavar="PATH",
                             help="also write a self-contained HTML report")
     p_frontier.add_argument("--json", action="store_true", help="machine-readable output")

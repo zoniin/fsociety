@@ -347,6 +347,9 @@ def _replay_detail(event: object, *, verbose: bool) -> str | None:
         return f"[{g('task_kind')}] {g('actor')} on behalf of {g('on_behalf_of')}"
     if t == "content.ingested":
         return f"{g('resource_uri')}  trust={g('trust')} class={g('classification')}"
+    if t == "context.carried":
+        return (f"{g('resource_uri')}  class={g('classification')}  "
+                f"(carried from {g('from_task')})")
     if t == "agent.message":
         return str(g("text"))[:80] if verbose else None
     if t == "tool.proposed":
