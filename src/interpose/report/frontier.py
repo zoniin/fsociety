@@ -210,6 +210,7 @@ def collect_frontier(
     *,
     session: SessionMode = "fresh",
     repeat: int = 1,
+    isolate: bool = False,
     on_trial: Callable[[TrialResult, list[object]], None] | None = None,
 ) -> Frontier:
     """Run the full sweep.
@@ -227,6 +228,9 @@ def collect_frontier(
     frontier = Frontier(list(scenario_ids), [], list(clients), session=session)
     loaded = [load_scenario(sid) for sid in scenario_ids]
     policy_ids: dict[str, str] = {}
+    # Isolated: one worker per policy for the whole sweep. Each run still gets
+    # a fresh policy instance inside it (IsolatedPolicy.__deepcopy__).
+    workers = {name: load_policy(name, isolate=True) for name in policy_names} if isolate else {}
     for client in clients:
         factory = provider_factory(client)
         n = 1 if is_deterministic_spec(client) else repeat
@@ -235,7 +239,8 @@ def collect_frontier(
                 trials: list[TrialResult] = []
                 for _ in range(n):
                     trial, records = run_trial(
-                        scenario, load_policy(name), factory, session=session
+                        scenario, workers.get(name) or load_policy(name), factory,
+                        session=session,
                     )
                     trials.append(trial)
                     if on_trial is not None:

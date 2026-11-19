@@ -63,6 +63,13 @@ jobs:
       - name: the frontier sweep runs and writes its report
         run: python -m interpose.cli frontier --html frontier-report/index.html
 
+      - name: the isolated policy worker reproduces the in-process frontier
+        shell: bash
+        run: |
+          python -m interpose.cli frontier --json | python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['points'], sort_keys=True))" > inproc.json
+          python -m interpose.cli frontier --json --isolate-policy | python -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d['points'], sort_keys=True))" > isolated.json
+          diff inproc.json isolated.json
+
       - name: exit codes are what the docs say
         shell: bash
         run: |

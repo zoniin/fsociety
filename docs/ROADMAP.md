@@ -121,18 +121,34 @@ engine can be measured on this frontier.
   rubber-stamp rate. Regulation-adjacent and, as far as I can find, unoccupied.
   Requires `ESCALATE`, which requires a scorer that can grade it.
 
-## Then — *out-of-process mediation*
+## Shipped — *the policy cannot touch its own scorecard (opt-in)*
 
-**Claim it would unlock:** containment rather than convention. Today the policy
-decision point is a function call in the agent's own process.
+**Claim unlocked:** with `--isolate-policy`, a policy adapter can no longer
+rewrite the measurement of itself. It runs in a worker process behind `ipwp/1`.
+The two Phase III attacks, rebinding the scorer and erasing tickets through the
+heap, now score an honest `COMPROMISED` rather than a detected forgery. A
+crashed, hung or malformed worker yields `POLICY_ERROR`, never a verdict. For an
+honest policy, every event is identical to in-process apart from identity. See
+[`POLICY_WORKER.md`](POLICY_WORKER.md).
 
-Enforcement point in a separate process, no import path from the agent,
-serialization as the trust boundary. This closes SIMPL-0001 — the first entry
-in the register and the one that biases every containment number.
+Built ahead of the Phase III trigger (the first third-party adapter) because
+making it opt-in removes the cost objection. The default path, and every
+published number, is unchanged.
 
-Also the trigger for the first genuinely useful container work: a
-`--network=none` job that turns the no-egress assertion into an OS-enforced
-fact.
+**Still cannot claim:** confinement (same user, same filesystem and network),
+or containment in the reference-monitor sense. The *enforcement* point is still
+in the agent's process, so SIMPL-0001 stays open.
+
+## Then — *out-of-process enforcement*
+
+**Claim it would unlock:** containment rather than convention.
+
+Move `Runner._dispatch` itself, the enforcement point, into a separate process
+with no import path from the agent, so tool execution is only reachable through
+it. Combined with the policy worker, that is the reference-monitor shape
+SIMPL-0001 asks for. Also the trigger for the first genuinely useful container
+work: a `--network=none` job that turns the no-egress assertion into an
+OS-enforced fact, and a worker that is confined rather than merely separate.
 
 ## Then — *paraphrase and adaptive attacks*
 

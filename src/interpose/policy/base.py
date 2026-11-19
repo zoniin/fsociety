@@ -98,14 +98,26 @@ def evaluate(policy: SecurityPolicy, ctx: DecisionContext) -> Decision:
     return decision
 
 
-def load_policy(ref: str) -> SecurityPolicy:
-    """Resolve a policy by short name or ``module.path:ClassName``."""
+def load_policy(ref: str, *, isolate: bool = False) -> SecurityPolicy:
+    """Resolve a policy by short name or ``module.path:ClassName``.
+
+    ``isolate=True`` hosts it in a separate worker process instead of importing
+    it here (``policy.isolated``); nothing from the policy module is imported
+    into this interpreter on that path.
+    """
     target = BUILTIN_POLICIES.get(ref, ref)
     if ":" not in target:
         raise PolicyLoadError(
             f"unknown policy {ref!r}. Use one of {sorted(BUILTIN_POLICIES)} "
             "or an explicit 'module.path:ClassName'."
         )
+    if isolate:
+        from .isolated import IsolatedPolicy, PolicyFault
+
+        try:
+            return cast(SecurityPolicy, IsolatedPolicy(target))
+        except PolicyFault as exc:
+            raise PolicyLoadError(f"policy worker for {target!r} failed to start: {exc}") from exc
     module_name, _, attr = target.partition(":")
     try:
         module = importlib.import_module(module_name)
@@ -148,6 +160,14 @@ def policy_digest(policy: SecurityPolicy) -> str:  # SIMPL-0007
     external one -- recorded as SIMPL-0007, and the reason
     ``interpose challenge`` now refuses non-built-in targets.
     """
+    # The one exception, and it is not the policy speaking: an isolated policy
+    # is a harness-side proxy whose digest the harness computed from source it
+    # read without executing. Matched on the exact class, so a policy cannot
+    # opt in by imitating the proxy's attributes.
+    from .isolated import IsolatedPolicy
+
+    if type(policy) is IsolatedPolicy:
+        return policy.harness_digest
     texts = _import_closure_sources(type(policy))
     if texts:
         return sha256_text("\n".join(texts))

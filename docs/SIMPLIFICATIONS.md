@@ -51,6 +51,12 @@ is about. See [`CEDAR-AND-ISOLATION.md`](CEDAR-AND-ISOLATION.md) §2 for the
 numbers and for why restricting the isolated process further costs the
 no-build-step install on all three platforms.
 
+**Since then: the decision can move out (`--isolate-policy`).** The policy
+now optionally runs in a worker process ([`POLICY_WORKER.md`](POLICY_WORKER.md)),
+which stops a policy tampering with the scorer, the world or the event log. As
+the paragraph above predicted, that does not close this entry: the enforcement
+point is still `Runner._dispatch`, in the agent's process. Status unchanged.
+
 **Real-world analogue.** AWS AgentCore Policy evaluating with Cedar at the
 gateway; FORGE's reference-monitor architecture.
 **Background.** Anderson 1972 (Computer Security Technology Planning Study);

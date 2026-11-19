@@ -225,6 +225,12 @@ open: sinks are declared by matching their ids in the user's request, not
 structurally, and session scoping, the real fix for cross-task creep, isn't
 modelled.
 
+**The policy can't rewrite its own score (opt-in).** `--isolate-policy` runs
+the policy under test in a worker process, so an adapter can't rebind the
+scorer or reach the simulated world. That was a real attack, which Phase III
+reproduced. It's a process boundary, not a sandbox; see
+[`docs/POLICY_WORKER.md`](docs/POLICY_WORKER.md).
+
 ## Quickstart
 
 ```console
@@ -278,6 +284,7 @@ CI gate rather than noise.
 | [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | threat model of the tool itself; read before running |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | the seven concepts and the decisions behind them |
 | [`docs/SIMPLIFICATIONS.md`](docs/SIMPLIFICATIONS.md) | what is faked, which way it biases results |
+| [`docs/POLICY_WORKER.md`](docs/POLICY_WORKER.md) | `--isolate-policy`: what the worker stops, what it doesn't |
 | [`docs/CHALLENGE.md`](docs/CHALLENGE.md) | how to break the reference policy, and what happens to your PR |
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | the ordering discipline, and the circularity objection it answers |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | adding a scenario in about twenty minutes |

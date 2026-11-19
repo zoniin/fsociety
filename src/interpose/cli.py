@@ -153,7 +153,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     scenario = load_scenario(args.scenario)
-    policy = load_policy(args.policy)
+    policy = load_policy(args.policy, isolate=args.isolate_policy)
     factory = _provider_factory(args.provider)
 
     if args.attack_only:
@@ -415,7 +415,8 @@ def cmd_frontier(args: argparse.Namespace) -> int:
         raise UsageError("--repeat must be at least 1")
 
     frontier = collect_frontier(
-        scenario_ids, policies, clients, session=args.session, repeat=args.repeat
+        scenario_ids, policies, clients, session=args.session, repeat=args.repeat,
+        isolate=args.isolate_policy,
     )
     if args.json:
         print(json.dumps(frontier.to_dict(), indent=2))
@@ -643,6 +644,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--session", choices=["fresh", "long"], default="fresh",
                        help="fresh: each benign task gets an empty context. long: the benign "
                             "suite is one session, and each task inherits earlier taint")
+    p_run.add_argument("--isolate-policy", action="store_true",
+                       help="host the policy in a separate worker process (not a sandbox; "
+                            "see docs/POLICY_WORKER.md)")
     p_run.add_argument("--save", action="store_true", help="write artifacts under runs/")
     p_run.add_argument("--no-save", action="store_true", help="do not write artifacts")
     p_run.set_defaults(func=cmd_run)
@@ -693,6 +697,9 @@ def build_parser() -> argparse.ArgumentParser:
                             "suite is one session, and each task inherits earlier taint")
     p_frontier.add_argument("--html", default=None, metavar="PATH",
                             help="also write a self-contained HTML report")
+    p_frontier.add_argument("--isolate-policy", action="store_true",
+                       help="host the policy in a separate worker process (not a sandbox; "
+                            "see docs/POLICY_WORKER.md)")
     p_frontier.add_argument("--json", action="store_true", help="machine-readable output")
     p_frontier.set_defaults(func=cmd_frontier)
 
