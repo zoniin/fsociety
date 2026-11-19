@@ -140,3 +140,16 @@ def test_frontier_samples_non_deterministic_clients(monkeypatch) -> None:
     text = frontier_mod.render_frontier_text(f)
     assert "NOT deterministic" in text and "held 3/3" in text
     assert "<svg" in frontier_mod.render_frontier_html(f)
+
+
+def test_frontier_saves_each_trial_as_it_completes(tmp_path, monkeypatch, capsys) -> None:
+    # A paid sweep that only reports at the end loses everything on interrupt.
+    # That happened once; this pins the fix.
+    from interpose.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["frontier", "indirect-document-injection", "--policies", "reference",
+                 "--save", "--progress"]) == 0
+    err = capsys.readouterr().err
+    assert err.count("cumulative tokens") == 2
+    assert len(list((tmp_path / "runs").glob("*/result.json"))) == 2

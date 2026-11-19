@@ -411,12 +411,40 @@ def cmd_frontier(args: argparse.Namespace) -> int:
     clients = _csv(args.clients) or list(DEFAULT_CLIENTS)
     for c in clients:
         provider_factory(c)  # validates the name; raises UsageError
+    from .providers.registry import is_deterministic_spec
+
+    if not all(is_deterministic_spec(c) for c in clients):
+        # Paid runs are never thrown away and never silent.
+        args.save = True
+        args.progress = True
     if args.repeat < 1:
         raise UsageError("--repeat must be at least 1")
 
+    # Each trial is written as it completes, with a progress line on stderr.
+    # With a real model every trial costs money, and a sweep that only reports
+    # at the end loses everything already paid for if it is interrupted.
+    done = {"trials": 0, "input_tokens": 0, "output_tokens": 0}
+
+    def on_trial(trial: TrialResult, records: list[object]) -> None:
+        done["trials"] += 1
+        for r in [trial.attack, *trial.benign]:
+            done["input_tokens"] += int(r.usage.get("input_tokens", 0))
+            done["output_tokens"] += int(r.usage.get("output_tokens", 0))
+        if args.save:
+            write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)  # type: ignore[arg-type]
+        if args.progress:
+            print(
+                f"  [{done['trials']}] {trial.scenario.id} {trial.policy.id} "
+                f"{trial.provider.id}: {trial.attack.outcome.verdict}, benign "
+                f"{trial.benign_passed}/{trial.benign_total}; cumulative tokens "
+                f"in={done['input_tokens']:,} out={done['output_tokens']:,}"
+                + (f"  -> runs/{trial.attack.run_id}" if args.save else ""),
+                file=sys.stderr, flush=True,
+            )
+
     frontier = collect_frontier(
         scenario_ids, policies, clients, session=args.session, repeat=args.repeat,
-        isolate=args.isolate_policy,
+        isolate=args.isolate_policy, on_trial=on_trial,
     )
     if args.json:
         print(json.dumps(frontier.to_dict(), indent=2))
@@ -700,6 +728,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_frontier.add_argument("--isolate-policy", action="store_true",
                        help="host the policy in a separate worker process (not a sandbox; "
                             "see docs/POLICY_WORKER.md)")
+    p_frontier.add_argument("--save", action="store_true",
+                            help="write every trial's artifacts under runs/ as it completes")
+    p_frontier.add_argument("--progress", action="store_true",
+                            help="one line per completed trial on stderr, with token totals "
+                                 "(on by default for non-deterministic clients)")
     p_frontier.add_argument("--json", action="store_true", help="machine-readable output")
     p_frontier.set_defaults(func=cmd_frontier)
 
