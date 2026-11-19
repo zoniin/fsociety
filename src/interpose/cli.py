@@ -689,7 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_frontier.add_argument("scenarios", nargs="*", help="limit to these (default: all)")
     p_frontier.add_argument(
         "--policies", default=None,
-        help="comma-separated (default: permissive,path-prefix,reference,context-taint)",
+        help="comma-separated (default: permissive,path-prefix,reference,context-taint,sink-scoped)",
     )
     p_frontier.add_argument(
         "--clients", default=None, help="comma-separated (default: compliant,paraphrasing)"

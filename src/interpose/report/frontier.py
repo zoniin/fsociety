@@ -43,7 +43,9 @@ __all__ = [
     "render_frontier_text",
 ]
 
-DEFAULT_POLICIES: tuple[str, ...] = ("permissive", "path-prefix", "reference", "context-taint")
+DEFAULT_POLICIES: tuple[str, ...] = (
+    "permissive", "path-prefix", "reference", "context-taint", "sink-scoped",
+)
 DEFAULT_CLIENTS: tuple[BehaviorClass, ...] = ("compliant", "paraphrasing")
 
 #: Verdicts that count as the attack being held.
@@ -106,8 +108,18 @@ class Point:
         return self.benign_passed / self.benign_total if self.benign_total else 0.0
 
     def dominates(self, other: Point) -> bool:
-        ge = self.contained >= other.contained and self.benign_passed >= other.benign_passed
-        gt = self.contained > other.contained or self.benign_passed > other.benign_passed
+        """At least as good on all three axes, strictly better on one.
+
+        False denials are an axis of their own, not folded into tasks
+        completed: a policy can finish every task while refusing calls inside
+        them, and a two-axis frontier would score that as free.
+        """
+        ge = (self.contained >= other.contained
+              and self.benign_passed >= other.benign_passed
+              and self.false_denials <= other.false_denials)
+        gt = (self.contained > other.contained
+              or self.benign_passed > other.benign_passed
+              or self.false_denials < other.false_denials)
         return ge and gt
 
 
@@ -233,7 +245,8 @@ def render_frontier_text(f: Frontier) -> str:
                 c = f.cell(sid, pid, client)
                 row += f"{_short(c.verdict) + ' ' + f'{c.benign_passed}/{c.benign_total}':<{sc_w}s}"
             p = next(p for p in f.points if p.policy == pid and p.client == client)
-            row += f"{p.contained}/{p.scenarios} held, {p.benign_passed}/{p.benign_total} useful"
+            row += (f"{p.contained}/{p.scenarios} held, {p.benign_passed}/{p.benign_total} useful, "
+                    f"{p.false_denials} refused")
             if p.on_frontier:
                 row += "  <- frontier"
             lines.append(row)
@@ -244,8 +257,10 @@ def render_frontier_text(f: Frontier) -> str:
         "  LEAKED = COMPROMISED                 have refused it (gap closed)",
         "  lucky  = never attempted, but the policy would have permitted it",
         "",
+        "  refused  = legitimate calls the policy denied during benign tasks, whether",
+        "             or not the task still completed.",
         "  frontier = no other policy, under the same client, is at least as good on",
-        "  both axes and better on one. There is no combined score, on purpose.",
+        "  all three axes and better on one. There is no combined score, on purpose.",
     ]
     hardest = f.clients[-1]
     held_all = [p for p in f.points if p.client == hardest and p.contained == p.scenarios]
@@ -257,7 +272,8 @@ def render_frontier_text(f: Frontier) -> str:
                 f"{c.scenario}/{t}" for c in f.cells
                 if c.policy == p.policy and c.client == hardest for t in c.blocked_tasks
             })
-            lines.append(f"    {p.policy:<28s}{cost} benign task(s)"
+            lines.append(f"    {p.policy:<28s}{cost} benign task(s), "
+                         f"{p.false_denials} refused call(s)"
                          + (f"  ({', '.join(blocked)})" if blocked else ""))
     else:
         lines += ["", f"  No policy holds every scenario under the {hardest} client."]
@@ -419,7 +435,7 @@ def _chart(f: Frontier) -> str:
     for p in f.points:
         groups.setdefault((p.contained, p.benign_passed), []).append(p)
     colors = {c: f"var(--s{i + 1})" for i, c in enumerate(f.clients[:2])}
-    labels: list[tuple[float, float, str, str]] = []
+    labels: list[tuple[float, float, list[str], str]] = []
     for (_c, _b), pts in groups.items():
         cx0, cy = x(pts[0].utility), y(pts[0].contained)
         for i, p in enumerate(pts):
@@ -436,28 +452,36 @@ def _chart(f: Frontier) -> str:
                 f'<circle class="ring" cx="{cx}" cy="{cy}" r="6.5" fill="{color}" '
                 f'stroke="var(--surface-2)" stroke-width="2"/></g>'
             )
-        names = " / ".join(sorted({p.policy for p in pts}))
+        names = sorted({p.policy for p in pts})
         half = (len(pts) - 1) * 7
+        widest = max(len(n) for n in names)
         # Label to the left when another dot sits close on the right, so a
         # name never runs across a neighbouring point.
         crowded = any(
-            other[0] == _c and 0 < x(o[0].utility) - cx0 < 8 * len(names) + 30
+            other[0] == _c and 0 < x(o[0].utility) - cx0 < 7 * widest + 30
             for other, o in groups.items() if o is not pts
         )
         if crowded:
             labels.append((cx0 - half - 12, cy, names, "end"))
         else:
             labels.append((cx0 + half + 12, cy, names, "start"))
-    # direct labels, nudged apart vertically when they collide
+    # Direct labels, one policy per line, blocks nudged apart vertically when
+    # they would collide.
     labels.sort(key=lambda t: (t[1], t[0]))
-    placed: list[tuple[float, float]] = []
-    for lx, ly, text, anchor in labels:
+    placed: list[tuple[float, float, float]] = []
+    for lx, ly, lines_, anchor in labels:
+        height = 15 * len(lines_)
         yy = ly + 4
-        while any(abs(yy - py) < 15 and abs(lx - px) < 200 for px, py in placed):
+        while any(abs(lx - px) < 200 and yy < pb and yy + height > pt
+                  for px, pt, pb in placed):
             yy += 15
-        placed.append((lx, yy))
+        placed.append((lx, yy - 11, yy - 11 + height))
+        tspans = "".join(
+            f'<tspan x="{lx}" dy="{0 if i == 0 else 15}">{html.escape(n)}</tspan>'
+            for i, n in enumerate(lines_)
+        )
         out.append(f'<text x="{lx}" y="{yy}" font-size="12" text-anchor="{anchor}" '
-                   f'fill="var(--ink)">{html.escape(text)}</text>')
+                   f'fill="var(--ink)">{tspans}</text>')
     out.append("</svg>")
     return "".join(out)
 
@@ -466,7 +490,7 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
     hardest = f.clients[-1]
     pts_hard = [p for p in f.points if p.client == hardest]
     held_all = [p for p in pts_hard if p.contained == p.scenarios]
-    best = max(held_all, key=lambda p: p.benign_passed, default=None)
+    best = max(held_all, key=lambda p: (p.benign_passed, -p.false_denials), default=None)
     ref = next((p for p in pts_hard if p.policy == "reference-least-privilege"), None)
 
     tiles = [
@@ -477,9 +501,10 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
         tiles.append((f"{ref.contained}/{ref.scenarios}",
                       f"scenarios the reference policy holds under the {hardest} client"))
     if best is not None:
-        tiles.append((f"{best.benign_total - best.benign_passed} task(s)",
-                      f"what {best.policy} pays to hold all {best.scenarios} "
-                      f"under {hardest}"))
+        tiles.append((f"{best.benign_total - best.benign_passed} task(s), "
+                      f"{best.false_denials} call(s)",
+                      f"what {best.policy}, the cheapest policy holding all "
+                      f"{best.scenarios}, pays under {hardest}"))
     else:
         tiles.append(("none", f"policies that hold every scenario under {hardest}"))
 
@@ -499,6 +524,9 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
                 if c.blocked_tasks:
                     cost = ('<div class="sub">blocked: '
                             + html.escape(", ".join(c.blocked_tasks)) + "</div>")
+                if c.false_denials:
+                    cost += f'<div class="sub">{c.false_denials} call(s) refused</div>'
+
                 cells.append(f"<td>{_chip(c.verdict)} <span class='mono'>"
                              f"{c.benign_passed}/{c.benign_total}</span>{cost}</td>")
             front = '<span class="front">FRONTIER</span>' if p.on_frontier else ""
@@ -507,7 +535,8 @@ def render_frontier_html(f: Frontier, *, title: str = "interpose frontier") -> s
                 f"<div class='sub'>{html.escape(client)} client</div></td>"
                 + "".join(cells)
                 + f"<td class='mono'>{p.contained}/{p.scenarios} held<br>"
-                  f"{p.benign_passed}/{p.benign_total} useful</td></tr>"
+                  f"{p.benign_passed}/{p.benign_total} useful<br>"
+                  f"{p.false_denials} refused</td></tr>"
             )
     heads = "".join(f"<th>{html.escape(s)}</th>" for s in f.scenarios)
 
@@ -524,7 +553,8 @@ utility are measured on the same corpus and never merged into one score.</p>
 <div class="tiles">{"".join(f'<div class="tile"><b>{html.escape(a)}</b><span>{html.escape(b)}</span></div>' for a, b in tiles)}</div>
 
 <h2>Containment against cost</h2>
-<p>Each dot is one policy under one client, summed over all scenarios. Dashed lines join
+<p>Each dot is one policy under one client, summed over all scenarios. Calls refused
+inside completed tasks are not on this chart; they are in the table and the tooltips. Dashed lines join
 a policy's two dots: the drop is what paraphrase does to it. Hover or focus a dot for
 detail.</p>
 <div class="chart" id="chart">{_chart(f)}<div class="legend">{legend}</div>
@@ -541,7 +571,9 @@ client. A blocked task is the policy refusing legitimate work.</p>
 attempted it, and a shadow evaluation shows the policy would have refused it.
 <b>lucky</b> the client never attempted it, but the policy would have permitted it.
 <b>leaked</b> restricted data reached a sink readable by someone not entitled to it.</p>
-<p>A <b>FRONTIER</b> row is not dominated by any other policy under the same client.
+<p><b>refused</b> counts legitimate calls the policy denied during benign tasks, including
+calls inside tasks that still completed. A <b>FRONTIER</b> row is not dominated by any other
+policy under the same client on containment, tasks completed and calls refused.
 The scripted clients are deterministic programs, not models: these are exact cells, not
 samples, and they say nothing about how a real model behaves. See
 <span class="mono">docs/SIMPLIFICATIONS.md</span> before quoting any number here.</p>

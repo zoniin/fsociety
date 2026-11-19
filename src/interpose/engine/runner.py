@@ -73,7 +73,7 @@ from ..tools.spec import ToolError, ToolSpec
 from ..world.models import Resource, World
 from .integrity import ApparatusSnapshot, pristine_functions, snapshot_apparatus
 from .outcome import Outcome, evaluate_outcome
-from .probe import shadow_probe
+from .probe import shadow_probe, sink_views
 
 __all__ = ["RunConfig", "RunRecord", "Runner"]
 
@@ -616,6 +616,7 @@ class Runner:
             sink=sink_view,
             history=tuple(self.history),
             user_task=self._prompt()[2],
+            sinks=sink_views(world),
         )
 
     def _feed_tool_error(

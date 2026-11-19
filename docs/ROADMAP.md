@@ -57,10 +57,29 @@ x policy x client, with dominance marked and no combined score), and
 after it. It was written with every bundled attack in view, so under
 [`PROTOCOL.md`](PROTOCOL.md) it is not evidence until a later scenario scores
 it. Its digest is frozen from the commit that adds it, for exactly that
-purpose. Nor that one benign task is its real cost. Benign tasks run in fresh
-sessions, so taint never accumulates. A **long-session benign suite** is the
-scenario that would measure label creep honestly, and it is now the obvious
-next challenge to this policy.
+purpose.
+
+## Shipped — *what label creep costs, and where it can be moved*
+
+**Claim unlocked:** the cost of paraphrase-robust containment depends on
+session length, and a per-call policy can move it but not remove it.
+
+- `--session long` runs each benign suite as one session. `context-taint`
+  drops from 24/25 to 22/25 once labels accumulate (SIMPL-0015 records what
+  this models and what it does not).
+- `sink-scoped-taint` declassifies by construction. When the trusted user's
+  request names the output sink, reads that sink could not hold are refused,
+  so the context never gets tainted. Fresh sessions: 25/25 tasks under
+  paraphrase, 4 reads refused. Long sessions: dominated by `context-taint`,
+  because refusing reads cannot undo carried taint.
+- Refused calls are now a third frontier axis. Without it, a policy that
+  finishes every task while refusing calls inside them scored as free.
+
+**Still cannot claim:** a cross-task fix. Forgetting labels at a task boundary
+is how a two-task exfiltration is laundered, so session scoping has to be an
+architectural decision (and a scenario that attacks it) rather than a policy
+rule. Also open: structural sink declaration instead of matching ids in the
+request, and tasks whose outputs go to sinks of different sensitivity.
 
 ## Next — *scenario three: metadata that lies*
 

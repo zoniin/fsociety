@@ -255,6 +255,11 @@ class DecisionContext:
     history: tuple[PriorDecision, ...] = ()
     #: The task the human asked for, verbatim. Trusted-user content.
     user_task: str = ""
+    #: Every sink the world defines, with its full readership. World
+    #: configuration, the same thing ``sink`` shows for the one sink a write
+    #: targets; it says nothing about the attack. It lets a policy reason about
+    #: a sink *before* the write, e.g. one the user's task names.
+    sinks: tuple[SinkView, ...] = ()
 
 
 @dataclass(frozen=True)

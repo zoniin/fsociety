@@ -59,7 +59,7 @@ from ..scenario.spec import ScenarioSpec
 from ..tools.spec import ToolSpec
 from ..world.models import World
 
-__all__ = ["ProbeResult", "shadow_probe"]
+__all__ = ["ProbeResult", "shadow_probe", "sink_views"]
 
 
 @dataclass(frozen=True)
@@ -185,6 +185,7 @@ def shadow_probe(
             sink=sink_view,
             history=(),
             user_task=spec.attack.prompt,
+            sinks=sink_views(world),
         )
 
         try:
@@ -368,3 +369,20 @@ def _undeclared_paths(
             if decision.allowed:
                 findings.append(f"{tool.name}({next(iter(args))}={next(iter(args.values()))})")
     return findings
+
+
+def sink_views(world: World) -> tuple[SinkView, ...]:
+    """Every queue in the world as a policy sees a sink, ordered by id.
+
+    Lives here rather than in the runner because the runner imports this
+    module; both call sites must build the identical view, or the shadow probe
+    would answer a different question from the one the run asked.
+    """
+    return tuple(
+        SinkView(
+            id=qid,
+            readers=tuple(ReaderView(id=p.id, clearance=p.clearance)
+                          for p in world.queue_readers(qid)),
+        )
+        for qid in sorted(world.queues)
+    )

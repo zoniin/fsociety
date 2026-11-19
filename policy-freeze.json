@@ -6,32 +6,37 @@
     "cedar-action-only": {
       "short_name": "cedar-action-only",
       "version": "0.1.0",
-      "digest": "sha256:3136b0baa82fb1f0a73fe46db75ac0118530baa9a0a9ce369ea2e56a33d5f892"
+      "digest": "sha256:dac4992a0fe8e2d95be4e8e4af768db2cf0479d9b7b9c9cf479bb933d00a0346"
     },
     "cedar-with-provenance": {
       "short_name": "cedar-with-provenance",
       "version": "0.1.0",
-      "digest": "sha256:567c13673bf4ad832adb9ad37267276c5f6d0cf937d5837b2a4fe7cc2c6dc55b"
+      "digest": "sha256:fb28e9fdcbf36fb86d3e9f88be0b009197ad3e427fcaf3ac5789db1d3c5f6785"
     },
     "context-taint": {
       "short_name": "context-taint",
       "version": "1.0.0",
-      "digest": "sha256:ec9d1e367d203807274cf717ad23c550b3163d34e4783247483908c4133860dc"
+      "digest": "sha256:d2c189b2a1982c63ed178cad8563c7d3dfbb5a3562c44691c41ae09dc6984b13"
     },
     "path-prefix-v1": {
       "short_name": "path-prefix",
       "version": "1.0.0",
-      "digest": "sha256:f72d5dcdc8f7c74cba0ed251521c22ab85aaf5b3473b2db6dfcdc784b47a23d9"
+      "digest": "sha256:235c0d5ceb146d192b6836eeb8e700ddd4aa4a56b814c12cbf5c8390d434e35e"
     },
     "permissive-baseline": {
       "short_name": "permissive",
       "version": "1.0.0",
-      "digest": "sha256:6e243f39a2a8fcdfdc850b93b6e7f6057cd9729f2814f8adeb4b5e6e6686c3d4"
+      "digest": "sha256:9ae1e4ded8d11a85f0ee4db419c7a95806d9bde953d95eb9b062356072159930"
     },
     "reference-least-privilege": {
       "short_name": "reference",
       "version": "1.0.0",
-      "digest": "sha256:9057b83853e7abfe03426edfbcdffec93bad51fd37871426389e856b84f05e25"
+      "digest": "sha256:51e41d413d8f0193f324e97146075476d293139a10d98d917479aef5c9b96025"
+    },
+    "sink-scoped-taint": {
+      "short_name": "sink-scoped",
+      "version": "1.0.0",
+      "digest": "sha256:44c2cf62866f2669ccfb2c4cb6695a841d69f12b90d28fc00dde106a43055d24"
     }
   }
 }
