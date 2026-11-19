@@ -13,6 +13,11 @@
       "version": "0.1.0",
       "digest": "sha256:567c13673bf4ad832adb9ad37267276c5f6d0cf937d5837b2a4fe7cc2c6dc55b"
     },
+    "context-taint": {
+      "short_name": "context-taint",
+      "version": "1.0.0",
+      "digest": "sha256:ec9d1e367d203807274cf717ad23c550b3163d34e4783247483908c4133860dc"
+    },
     "path-prefix-v1": {
       "short_name": "path-prefix",
       "version": "1.0.0",
