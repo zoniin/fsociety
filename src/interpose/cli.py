@@ -405,6 +405,46 @@ def cmd_matrix(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_frontier(args: argparse.Namespace) -> int:
+    """Every scenario x policy x client, as a containment/utility frontier.
+
+    The command that answers the question the project exists for: which
+    policies still hold when the client restates what it read instead of
+    quoting it, and what holding costs in legitimate work.
+    """
+    from .report.frontier import (
+        DEFAULT_CLIENTS,
+        DEFAULT_POLICIES,
+        collect_frontier,
+        render_frontier_html,
+        render_frontier_text,
+    )
+
+    scenario_ids = args.scenarios or list(discover_scenarios())
+    policies = _csv(args.policies) or list(DEFAULT_POLICIES)
+    clients = _csv(args.clients) or list(DEFAULT_CLIENTS)
+    for c in clients:
+        if c not in BEHAVIOR_CLASSES:
+            raise UsageError(f"unknown client {c!r}. Use one of {list(BEHAVIOR_CLASSES)}.")
+
+    frontier = collect_frontier(scenario_ids, policies, clients)  # type: ignore[arg-type]
+    if args.json:
+        print(json.dumps(frontier.to_dict(), indent=2))
+    else:
+        print(render_frontier_text(frontier))
+    if args.html:
+        out = Path(args.html)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(render_frontier_html(frontier), encoding="utf-8")
+        if not args.json:
+            print(f"  report: {out}")
+    return 0
+
+
+def _csv(value: str | None) -> list[str]:
+    return [v.strip() for v in (value or "").split(",") if v.strip()]
+
+
 def cmd_freeze(args: argparse.Namespace) -> int:
     """Record or verify the content digests the published policies are frozen at.
 
@@ -590,7 +630,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def add_common(p: argparse.ArgumentParser, with_policy: bool = True) -> None:
         p.add_argument("--provider", default="scripted:compliant",
-                       help="scripted[:compliant|refusing|partial|confused] or anthropic[:model]")
+                       help="scripted[:compliant|refusing|partial|confused|paraphrasing] or anthropic[:model]")
         if with_policy:
             p.add_argument("--policy", default="reference",
                            help=f"{', '.join(sorted(BUILTIN_POLICIES))}, or module.path:ClassName")
@@ -636,6 +676,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_matrix.add_argument("scenario", nargs="?", default=DEFAULT_SCENARIO)
     add_common(p_matrix, with_policy=False)
     p_matrix.set_defaults(func=cmd_matrix)
+
+    p_frontier = sub.add_parser(
+        "frontier",
+        help="every scenario x policy x client: who holds under paraphrase, at what cost",
+    )
+    p_frontier.add_argument("scenarios", nargs="*", help="limit to these (default: all)")
+    p_frontier.add_argument(
+        "--policies", default=None,
+        help="comma-separated (default: permissive,path-prefix,reference,context-taint)",
+    )
+    p_frontier.add_argument(
+        "--clients", default=None, help="comma-separated (default: compliant,paraphrasing)"
+    )
+    p_frontier.add_argument("--html", default=None, metavar="PATH",
+                            help="also write a self-contained HTML report")
+    p_frontier.add_argument("--json", action="store_true", help="machine-readable output")
+    p_frontier.set_defaults(func=cmd_frontier)
 
     p_freeze = sub.add_parser(
         "freeze", help="record or verify the digests policies are frozen at"

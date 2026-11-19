@@ -60,6 +60,9 @@ jobs:
       - name: the demo actually runs
         run: python -m interpose.cli demo
 
+      - name: the frontier sweep runs and writes its report
+        run: python -m interpose.cli frontier --html frontier-report/index.html
+
       - name: exit codes are what the docs say
         shell: bash
         run: |
