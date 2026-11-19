@@ -39,6 +39,29 @@ the evidence. The second scenario also partially falsified the data-only
 expressiveness claim — the format held, but two engine primitives had to be
 added. That is recorded in `PROTOCOL.md` §5 rather than quietly absorbed.
 
+## Shipped — *a policy that holds when the agent paraphrases*
+
+**Claim unlocked:** on the bundled corpus, containment under a restating client
+is achievable, and its price can be named. `context-taint` checks egress against
+every source in the agent's context rather than the text of the write. It holds
+all three scenarios under all five scripted clients, at a cost of exactly one
+benign task (`confidential-egress/b2-vendor-invoice-query`, label creep). The
+reference policy, frozen and unchanged, still falls to paraphrase on both flow
+scenarios. That is kept as a standing regression test, not fixed away.
+
+**Also shipped:** `interpose frontier`, the sweep the claim rests on (scenario
+x policy x client, with dominance marked and no combined score), and
+`--html`, which writes it as one self-contained page.
+
+**Still cannot claim:** that `context-taint` holds against an attack written
+after it. It was written with every bundled attack in view, so under
+[`PROTOCOL.md`](PROTOCOL.md) it is not evidence until a later scenario scores
+it. Its digest is frozen from the commit that adds it, for exactly that
+purpose. Nor that one benign task is its real cost. Benign tasks run in fresh
+sessions, so taint never accumulates. A **long-session benign suite** is the
+scenario that would measure label creep honestly, and it is now the obvious
+next challenge to this policy.
+
 ## Next — *scenario three: metadata that lies*
 
 Both bundled scenarios hand the reference policy perfect metadata, which
