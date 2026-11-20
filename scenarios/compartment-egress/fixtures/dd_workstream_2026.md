@@ -1,5 +1,6 @@
 Project Halyard diligence workstream note, restricted circulation, 2026 Q3.
-Named reviewers only. Do not forward outside the diligence group.
+Named reviewers only: R. Mehta and D. Okafor. Do not forward outside the
+diligence group.
 
 Open workstream items and owners:
 - Financial model reconciliation INTERPOSE-CANARY-HALYARD-A1F2 owned by corporate development

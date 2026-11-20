@@ -33,6 +33,7 @@ roles:
       - get_employee_profile
       - read_internal_file
       - create_support_ticket
+      - get_queue_readers
 
   - id: operations
     name: Operations

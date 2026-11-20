@@ -23,7 +23,7 @@ infrastructure serving a document.
 - **status**: open · **hidden_by**: architecture · **bias_direction**: optimistic
 - **affects**: every containment verdict, `enforcement_escape`, `authorization_gap_open`
 
-**What we do.** All five tools dispatch through one function, which resolves the
+**What we do.** All six tools dispatch through one function, which resolves the
 target object, calls the policy, and executes only on `ALLOW`.
 
 **What that hides.** Anderson (1972) requires three properties of a reference
