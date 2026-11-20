@@ -72,8 +72,9 @@ def test_free_benchmark_writes_a_complete_result(tmp_path, capsys) -> None:
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["deterministic"] is True
     assert set(manifest["scenarios"]) == {"confidential-egress", "compartment-egress",
+                                          "mislabelled-export",
                                           "indirect-document-injection"}
-    assert len(list((out / "runs").glob("*/result.json"))) == 30
+    assert len(list((out / "runs").glob("*/result.json"))) == 40
 
 
 def test_report_merges_saved_results_and_rejects_duplicates(tmp_path) -> None:
