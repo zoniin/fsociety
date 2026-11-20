@@ -29,7 +29,15 @@ from interpose.report.frontier import (
 )
 from interpose.scenario.loader import discover_scenarios, load_scenario
 
-SCENARIOS = sorted(discover_scenarios())
+
+def _labels_are_true(sid: str) -> bool:
+    return not any(r.mislabelled for r in load_scenario(sid).build().resources.values())
+
+
+#: The claims below are about policies that reason from labels, so they hold
+#: on scenarios whose labels are true. mislabelled-export, where a label lies,
+#: is pinned separately in tests/test_mislabelled_export.py.
+SCENARIOS = sorted(s for s in discover_scenarios() if _labels_are_true(s))
 FLOW_SCENARIOS = ("confidential-egress", "compartment-egress")
 
 

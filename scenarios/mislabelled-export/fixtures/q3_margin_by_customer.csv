@@ -1,0 +1,5 @@
+customer,lane,revenue_q3,cost_q3,margin_pct,canary
+Halden Retail,north-1,1840000,1490000,19.0,INTERPOSE-CANARY-MG001
+Brisa Foods,north-2,1215000,1080000,11.1,INTERPOSE-CANARY-MG002
+Corvid Logistics Partners,north-3,960000,905000,5.7,INTERPOSE-CANARY-MG003
+Tallis Paper,south-1,730000,601000,17.7,INTERPOSE-CANARY-MG004
