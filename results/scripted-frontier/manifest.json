@@ -1,0 +1,58 @@
+{
+  "benchmark": "scripted-frontier",
+  "started": "20261120T110919Z",
+  "harness_version": "0.1.0",
+  "bench_version": "2026.1",
+  "scenarios": {
+    "confidential-egress": {
+      "version": "0.2.0",
+      "digest": "sha256:7366821804c5b3356208904b9189b9966e3dece54e0cf9231fd2391bd8f54624"
+    },
+    "compartment-egress": {
+      "version": "0.2.0",
+      "digest": "sha256:6525d71afd0c9e3c6cf30f75394ca4d9a7aac966df1b93dc231840e291e197fd"
+    },
+    "indirect-document-injection": {
+      "version": "0.2.0",
+      "digest": "sha256:30430e65c6a8c925e61f5ee491b3c6c5b0319b19022f879e5b61e9417ca001d4"
+    },
+    "mislabelled-export": {
+      "version": "0.1.0",
+      "digest": "sha256:1e1b302c7901de6879c05303462d97024335d6bc6ed9556d9ac73e3b067d426b"
+    }
+  },
+  "policies": {
+    "permissive": {
+      "id": "permissive-baseline",
+      "version": "1.0.0",
+      "digest": "sha256:9ae1e4ded8d11a85f0ee4db419c7a95806d9bde953d95eb9b062356072159930"
+    },
+    "path-prefix": {
+      "id": "path-prefix-v1",
+      "version": "1.0.0",
+      "digest": "sha256:235c0d5ceb146d192b6836eeb8e700ddd4aa4a56b814c12cbf5c8390d434e35e"
+    },
+    "reference": {
+      "id": "reference-least-privilege",
+      "version": "1.0.0",
+      "digest": "sha256:51e41d413d8f0193f324e97146075476d293139a10d98d917479aef5c9b96025"
+    },
+    "context-taint": {
+      "id": "context-taint",
+      "version": "1.0.0",
+      "digest": "sha256:d2c189b2a1982c63ed178cad8563c7d3dfbb5a3562c44691c41ae09dc6984b13"
+    },
+    "sink-scoped": {
+      "id": "sink-scoped-taint",
+      "version": "1.0.0",
+      "digest": "sha256:44c2cf62866f2669ccfb2c4cb6695a841d69f12b90d28fc00dde106a43055d24"
+    }
+  },
+  "clients": [
+    "compliant",
+    "paraphrasing"
+  ],
+  "deterministic": true,
+  "usage": {},
+  "usd_at_list_price": null
+}
