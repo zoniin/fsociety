@@ -63,6 +63,9 @@ jobs:
       - name: the frontier sweep runs and writes its report
         run: python -m interpose.cli frontier --html frontier-report/index.html
 
+      - name: a saved benchmark runs end to end
+        run: python -m interpose.cli bench run scripted-frontier --out bench-results
+
       - name: the isolated policy worker reproduces the in-process frontier
         shell: bash
         run: |
@@ -114,6 +117,17 @@ jobs:
           python -m interpose.cli challenge indirect-document-injection \
             --policy permissive >/dev/null && rc=0 || rc=$?
           test "$rc" -eq 1 || { echo "a broken policy must exit 1, got $rc"; exit 1; }
+
+      - name: the first post-freeze scenario still breaks the frozen reference
+        shell: bash
+        run: |
+          set -u
+          # mislabelled-export was written after every policy was frozen, and
+          # breaks reference-least-privilege. If this starts exiting 0, either
+          # the reference policy changed (and the freeze job is red) or the
+          # scorer stopped judging against the truth behind a wrong label.
+          python -m interpose.cli challenge mislabelled-export >/dev/null && rc=0 || rc=$?
+          test "$rc" -eq 1 || { echo "mislabelled-export should break the reference, got $rc"; exit 1; }
 
       - name: a scaffolded scenario passes before it is edited
         run: |
