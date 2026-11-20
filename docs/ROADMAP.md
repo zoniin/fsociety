@@ -81,7 +81,21 @@ architectural decision (and a scenario that attacks it) rather than a policy
 rule. Also open: structural sink declaration instead of matching ids in the
 request, and tasks whose outputs go to sinks of different sensitivity.
 
-## Next — *scenario three: metadata that lies*
+## Shipped — *metadata that lies* (as scenario four, `mislabelled-export`)
+
+**Claim unlocked:** a policy that reasons from labels inherits every error in
+them, and the corpus can now show that rather than assert it (SIMPL-0008).
+One stale default label breaches every label-trusting policy here, under
+both clients. The frozen reference is reported broken by `interpose challenge`
+for the first time, by a scenario written after it was frozen. Resources can
+carry their true classification (`actual:`), which also gives the scorer an
+entitlement relation that can differ from the policy's (partial repair of R5).
+
+**Still cannot claim:** that anything here defends against it. The obvious
+next entrant is a content-inspecting policy that judges data by what it
+contains, not what it is labelled. The other open items below still stand.
+
+## Was next — *scenario three: metadata that lies* (original plan, kept for the record)
 
 Both bundled scenarios hand the reference policy perfect metadata, which
 SIMPL-0008 flags as the assumption most likely to make the reference policy look

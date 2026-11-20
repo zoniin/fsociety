@@ -52,6 +52,17 @@ What the mechanism still cannot do is manufacture a challenger. Until someone
 outside the project uses it, the ordering rule remains a promise with good
 plumbing behind it.
 
+**First honoured instance, 2026-11-20.** `mislabelled-export` (commit
+`727dfcf`) was written after every bundled policy's digest was recorded in
+`policy-freeze.json`. The last change to any of them is the logged re-freeze
+in `d283ff5`, which moved digests without moving behaviour. So it is the first
+scenario that satisfies this rule: no policy it scores could have been tuned
+against it. `interpose challenge mislabelled-export` reports the frozen
+reference policy **broken**. What it does not satisfy is the third-party
+condition. The scenario and the two newest policies have the same author, so
+this is a stronger kind of evidence than the corpus had, not the kind this
+section is asking for.
+
 ## 3. The blindness rule
 
 **The policy never learns which trial it is in.**

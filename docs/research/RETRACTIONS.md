@@ -84,6 +84,15 @@ reference policy cannot be scored wrong on a read it permits.
 result comparing `reference-least-privilege` to the baselines on the read axis
 should be cited.
 
+**Partial repair, 2026-11-20.** A resource may now declare `actual:`, its true
+classification and readers, which `readable_by` uses while every policy still
+sees the label. Where it is declared, the oracle and the policy's relation can
+disagree, and on `mislabelled-export` they do. There the reference policy *is*
+scored wrong on a read it permits, the first place this has been possible.
+On the other three scenarios no resource declares `actual:`, the two
+relations still agree on every pair, and this retraction stands for them
+unchanged.
+
 ## R6 · That the freeze protects against drift
 
 > "The freeze protects against *drift* — the realistic failure, where someone

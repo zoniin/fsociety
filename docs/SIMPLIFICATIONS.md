@@ -249,6 +249,17 @@ without inheriting the metadata discipline that makes it true.
 classifications, scored separately — arguably the single most valuable
 scenario #2 candidate.
 
+**Since then: one instance is measured (`mislabelled-export`, 2026-11-20).**
+Resources can now carry the truth behind a wrong label (`actual:` in
+`world.yaml`). Policies are shown the label; the scorer judges against the
+truth. One stale default label, a confidential export stamped `public`, is
+enough to breach every policy that reasons from labels, under both clients.
+Only `path-prefix-v1`, which never trusted labels, holds it. The bias this
+entry predicted is now visible in the frontier, not just asserted. It stays
+open: one kind of mislabel in one scenario is a sample of the problem, not
+its measure. Missing labels, over-classification and stale reader lists are
+still unmodelled.
+
 ---
 
 ## SIMPL-0009 — Capabilities are in-process objects, not tokens
