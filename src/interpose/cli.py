@@ -111,6 +111,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     scenario_ids = [args.scenario] if args.scenario else list(discover_scenarios())
     payload: list[dict[str, Any]] = []
     saved: dict[str, str] = {}
+    verdicts: dict[str, str] = {}
 
     for index, sid in enumerate(scenario_ids):
         scenario = load_scenario(sid)
@@ -122,6 +123,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
             # the demo told the reader to replay a run it had never written.
             write_run_artifacts(DEFAULT_RUNS_DIR, trial, records)
             saved.setdefault(f"{sid}:{name}", trial.attack.run_id)
+            verdicts[f"{sid}:{name}"] = trial.attack.outcome.verdict
 
         if args.json:
             payload.append(
@@ -138,16 +140,17 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
     if len(scenario_ids) > 1:
         print()
-        print("  Read the two tables together. path-prefix-v1 -- the fix everyone")
-        print("  reaches for -- contains the first attack and fails the second one")
-        print("  outright, while costing *less* utility there. It was never a good")
-        print("  policy; it was a policy that happened to match one attack.")
+        print("  Read the tables together. No policy's score on one scenario predicts")
+        print("  its score on the next: path-prefix-v1 -- the fix everyone reaches for --")
+        print("  fails scenarios that reference-least-privilege holds, and holds the one")
+        print("  where a label lies and every policy that trusts labels is breached.")
     print()
     print("  The causal trace: which untrusted bytes reached which privileged call,")
-    print("  and which rule stopped it.")
+    print("  and which rule stopped it -- or why none did.")
     print()
     for sid in scenario_ids:
-        print(f"      interpose replay runs/{saved[f'{sid}:reference']}   # {sid}, contained")
+        key = f"{sid}:reference"
+        print(f"      interpose replay runs/{saved[key]}   # {sid}, {verdicts[key].lower()}")
     return 0
 
 
