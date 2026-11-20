@@ -172,10 +172,11 @@ def build_world(world_file: Path) -> World:
             readers=tuple(str(p) for p in r_spec.get("readers", [])),
             path=r_spec.get("path"),
             index_terms=tuple(str(t) for t in r_spec.get("index_terms", [])),
+            **_actual(r_spec, uri),
         )
         if resource.owner_principal_id and resource.owner_principal_id not in world.principals:
             raise ScenarioError(f"{uri}: unknown owner {resource.owner_principal_id}")
-        for reader in resource.readers:
+        for reader in (*resource.readers, *(resource.actual_readers or ())):
             if reader not in world.principals:
                 raise ScenarioError(f"{uri}: unknown reader {reader}")
         world.resources[uri] = resource
@@ -183,3 +184,20 @@ def build_world(world_file: Path) -> World:
     if not world.principals:
         raise ScenarioError(f"{world_file}: no principals defined")
     return world
+
+
+def _actual(r_spec: dict, uri: str) -> dict:
+    """Parse an optional ``actual:`` block: the truth behind a wrong label."""
+    actual = r_spec.get("actual")
+    if actual is None:
+        return {}
+    if not isinstance(actual, dict) or set(actual) - {"classification", "readers"} or not actual:
+        raise ScenarioError(
+            f"{uri}: 'actual' must set classification and/or readers, and nothing else"
+        )
+    out: dict = {}
+    if "classification" in actual:
+        out["actual_classification"] = Classification(actual["classification"])
+    if "readers" in actual:
+        out["actual_readers"] = tuple(str(p) for p in actual["readers"])
+    return out

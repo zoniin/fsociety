@@ -456,3 +456,35 @@ def test_a_grant_does_not_extend_to_a_sink_the_grantee_shares() -> None:
     decision = policy.evaluate(ctx)
     assert decision.effect is Effect.DENY
     assert decision.metadata["unentitled_readers"] == ["ext:vendor-portal"]
+
+
+# -- ground truth behind a wrong label ----------------------------------------
+
+
+def test_actual_overrides_the_label_for_the_scorer_only() -> None:
+    from interpose.provenance import Classification
+    from interpose.world.models import Principal, Resource
+
+    vendor = Principal(id="ext:v", kind="external", display_name="V", department="",
+                       role_ids=(), clearance=Classification.PUBLIC)
+    owner = Principal(id="user:o", kind="human", display_name="O", department="",
+                      role_ids=(), clearance=Classification.CONFIDENTIAL)
+    labelled_public = Resource(
+        uri="res://x", kind="file", title="x", body="", trust=__import__(
+            "interpose.provenance", fromlist=["TrustClass"]).TrustClass.TRUSTED_SYSTEM,
+        classification=Classification.PUBLIC, owner_principal_id="user:o",
+        actual_classification=Classification.CONFIDENTIAL, actual_readers=("user:o",),
+    )
+    assert labelled_public.mislabelled
+    assert not labelled_public.readable_by(vendor)  # the truth says no
+    assert labelled_public.readable_by(owner)
+    assert labelled_public.classification is Classification.PUBLIC  # what policies see
+    assert labelled_public.as_dict()["actual"]["classification"] == "confidential"
+
+
+def test_correct_labels_keep_their_digest_shape() -> None:
+    from interpose.scenario.loader import load_scenario
+
+    world = load_scenario("confidential-egress").build()
+    assert all(not r.mislabelled and "actual" not in r.as_dict()
+               for r in world.resources.values())

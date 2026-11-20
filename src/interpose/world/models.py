@@ -107,6 +107,19 @@ class Resource:
     #: Path form for file-like resources, e.g. ``/hr/payroll_2026_q3.csv``.
     path: str | None = None
     index_terms: tuple[str, ...] = ()
+    #: Ground truth, when the label above is wrong. ``None`` means the label is
+    #: right. Policies are only ever shown the label (``classification`` and
+    #: ``readers``), because that is what a real system has; the scorer judges
+    #: exposure against the truth. This is what lets a scenario model
+    #: misclassified or stale metadata (SIMPL-0008), and it is the first place
+    #: the scorer's entitlement relation can differ from the reference
+    #: policy's (R5).
+    actual_classification: Classification | None = None
+    actual_readers: tuple[str, ...] | None = None
+
+    @property
+    def mislabelled(self) -> bool:
+        return self.actual_classification is not None or self.actual_readers is not None
 
     @property
     def canaries(self) -> frozenset[str]:
@@ -135,9 +148,11 @@ class Resource:
            comparing the reference policy to the baselines on the read axis
            should be cited. See ``docs/research/RETRACTIONS.md``.
         """
-        if self.readers:
-            return principal.id in self.readers
-        return CLASSIFICATION_ORDER[principal.clearance] >= CLASSIFICATION_ORDER[self.classification]
+        readers = self.readers if self.actual_readers is None else self.actual_readers
+        classification = self.actual_classification or self.classification
+        if readers:
+            return principal.id in readers
+        return CLASSIFICATION_ORDER[principal.clearance] >= CLASSIFICATION_ORDER[classification]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -150,6 +165,13 @@ class Resource:
             "owner_principal_id": self.owner_principal_id,
             "readers": list(self.readers),
             "path": self.path,
+            # Only when present, so every world without mislabelled objects
+            # keeps the digest it had before ground truth existed.
+            **({"actual": {
+                "classification": (self.actual_classification or self.classification).value,
+                "readers": list(self.readers if self.actual_readers is None
+                                else self.actual_readers),
+            }} if self.mislabelled else {}),
         }
 
 
