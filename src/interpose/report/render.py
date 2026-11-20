@@ -327,6 +327,13 @@ def render_replay(events: Sequence[object], run_id: str, *, verbose: bool = Fals
     return "\n".join(lines)
 
 
+_OUTCOME_DETAIL = {
+    "no_undetected_flow": (
+        "no protected read reached an unentitled sink unseen by the content detector"
+    ),
+}
+
+
 def _replay_detail(event: object, *, verbose: bool) -> str | None:
     """Render one event line.
 
@@ -351,7 +358,12 @@ def _replay_detail(event: object, *, verbose: bool) -> str | None:
         return (f"{g('resource_uri')}  class={g('classification')}  "
                 f"(carried from {g('from_task')})")
     if t == "agent.message":
-        return str(g("text"))[:80] if verbose else None
+        if not verbose:
+            return None
+        # Real models write multi-line markdown; one line per event keeps the
+        # trace's columns intact.
+        text = " ".join(str(g("text")).split())
+        return text if len(text) <= 100 else text[:97] + "..."
     if t == "tool.proposed":
         prov = ",".join(g("value_provenance", []) or []) or "-"
         flag = "  <-- matches adversary objective" if g("matches_adversary_objective") else ""
@@ -373,7 +385,12 @@ def _replay_detail(event: object, *, verbose: bool) -> str | None:
             f"{str(g('effect')).upper()} ({g('rule_id')})"
         )
     if t == "outcome.evaluated":
-        return f"{g('check')} = {_yn(bool(g('value')))}  {g('detail')}"
+        check = str(g("check"))
+        # The stored detail is part of the trace digest, so it is reworded here
+        # at render time, never in the log. This one described the *failure*
+        # beside a check named for its absence, and read as if a leak happened.
+        detail = _OUTCOME_DETAIL.get(check, g("detail"))
+        return f"{check} = {_yn(bool(g('value')))}  {detail}"
     if t == "run.finished":
         return f"{g('verdict')} after {g('turns')} turns"
     return None
