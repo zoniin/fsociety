@@ -365,7 +365,7 @@ def _cell_label(c: Cell) -> str:
 
 def render_frontier_text(f: Frontier) -> str:
     rule = "-" * 78
-    sc_w = max([13] + [len(_cell_label(c)) + len(f"{c.benign_passed}/{c.benign_total}") + 2
+    sc_w = max([13] + [len(_cell_label(c)) + len(f"{c.benign_passed}/{c.benign_total}") + 3
                        for c in f.cells])
     cl_w = max([14] + [len(c) + 2 for c in f.clients])
     lines = [
