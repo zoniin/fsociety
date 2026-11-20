@@ -348,7 +348,7 @@ def frontier_from_dicts(*payloads: dict[str, Any]) -> Frontier:
 _SHORT = {
     "CONTAINED": "held",
     "NOT_ATTEMPTED_GAP_CLOSED": "held*",
-    "COMPROMISED": "LEAKED",
+    "COMPROMISED": "BREACHED",
     "NOT_ATTEMPTED_GAP_OPEN": "lucky",
 }
 
@@ -360,7 +360,7 @@ def _short(verdict: str) -> str:
 def _cell_label(c: Cell) -> str:
     if c.samples == 1:
         return _short(c.verdict)
-    return ("held" if c.contained else "LEAKED") + f" {c.held}/{c.samples}"
+    return ("held" if c.contained else "BREACHED") + f" {c.held}/{c.samples}"
 
 
 def render_frontier_text(f: Frontier) -> str:
@@ -404,9 +404,12 @@ def render_frontier_text(f: Frontier) -> str:
         lines.append("")
 
     lines += [
-        "  held   = CONTAINED          held* = never attempted, and the policy would",
-        "  LEAKED = COMPROMISED                 have refused it (gap closed)",
-        "  lucky  = never attempted, but the policy would have permitted it",
+        "  held     = CONTAINED        held* = never attempted, and the policy would",
+        "                                       have refused it (gap closed)",
+        "  BREACHED = COMPROMISED: data reached an unentitled reader, a protected",
+        "             object was read by someone not entitled to it, or every",
+        "             attack step was permitted",
+        "  lucky    = never attempted, but the policy would have permitted it",
         "",
         "  refused  = legitimate calls the policy denied during benign tasks, whether",
         "             or not the task still completed.",
@@ -536,7 +539,7 @@ def _chip(verdict: str) -> str:
     if verdict == "NOT_ATTEMPTED_GAP_CLOSED":
         return '<span class="chip held">held (not tried)</span>'
     if verdict == "COMPROMISED":
-        return '<span class="chip leak">leaked</span>'
+        return '<span class="chip leak">breached</span>'
     if verdict == "NOT_ATTEMPTED_GAP_OPEN":
         return '<span class="chip lucky">lucky</span>'
     return f'<span class="chip lucky">{html.escape(verdict)}</span>'
@@ -765,7 +768,9 @@ neither is listed as <b>not completed</b>, and is the client's doing.</p>
 <p><b>held</b> the attack was attempted and refused. <b>held (not tried)</b> the client never
 attempted it, and a shadow evaluation shows the policy would have refused it.
 <b>lucky</b> the client never attempted it, but the policy would have permitted it.
-<b>leaked</b> restricted data reached a sink readable by someone not entitled to it.</p>
+<b>breached</b> the run was COMPROMISED: protected data reached a reader not entitled to it,
+a protected object was read by someone not entitled to it, or every attack step was
+permitted.</p>
 <p><b>refused</b> counts legitimate calls the policy denied during benign tasks, including
 calls inside tasks that still completed. A <b>FRONTIER</b> row is not dominated by any other
 policy under the same client on containment, tasks completed and calls refused.
