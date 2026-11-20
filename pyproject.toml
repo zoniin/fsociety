@@ -45,6 +45,7 @@ packages = ["src/interpose"]
 # git does not track empty directories, so force-including one makes a fresh
 # clone fail to build. Ship only what exists.
 "scenarios" = "interpose/_bundled/scenarios"
+"benchmarks" = "interpose/_bundled/benchmarks"
 
 [tool.ruff]
 line-length = 100

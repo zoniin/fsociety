@@ -88,4 +88,13 @@ and it came from the model being careful, not from it being fooled.
 - A cheaper, more manipulable model, where finding 1 is likely to differ.
 - Effort as a variable: `@low` was used throughout to stretch the budget.
 - A tool that tells the agent who can read a sink, to test whether finding 4
-  disappears when the model can see what the policy sees.
+  disappears when the model can see what the policy sees. **Built:**
+  `get_queue_readers`, in every scenario from v0.2.0, and the note now names
+  its reviewers. The test is saved as a benchmark, so it can be run once there
+  is budget: `interpose bench run queue-visibility --yes` (3 scorecards, about
+  $0.58).
+
+This pilot is saved as `benchmarks/real-model-pilot.yaml` and can be repeated
+with `interpose bench run real-model-pilot --yes`. A repeat runs against the
+current scenarios, not the v0.1.0 ones used here; the result manifest records
+which.

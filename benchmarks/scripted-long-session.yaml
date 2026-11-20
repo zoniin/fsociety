@@ -1,0 +1,8 @@
+name: scripted-long-session
+description: >
+  The same sweep with each scenario's benign suite run as one long session, so
+  context taint accumulates. Free and offline.
+scenarios: [confidential-egress, compartment-egress, indirect-document-injection]
+policies: [permissive, path-prefix, reference, context-taint, sink-scoped]
+clients: [compliant, paraphrasing]
+session: long

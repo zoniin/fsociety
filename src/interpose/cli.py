@@ -459,6 +459,60 @@ def cmd_frontier(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bench(args: argparse.Namespace) -> int:
+    """Saved benchmarks: list, plan, run, or re-render a saved result."""
+    from .bench import discover_benchmarks, load_benchmark, plan, run_benchmark
+
+    if args.bench_command == "ls":
+        for name, path in discover_benchmarks().items():
+            spec, _ = load_benchmark(str(path))
+            p = plan(spec)
+            cost = (f"~${p.estimated_usd:.2f}" if p.estimated_usd is not None
+                    else ("free" if p.deterministic else "cost unknown"))
+            print(f"  {name:<28s} {p.trials:>3d} scorecards  {cost:<12s} {spec.description}")
+        return 0
+
+    if args.bench_command == "report":
+        from .report.frontier import frontier_from_dicts, render_frontier_html
+
+        payloads = [json.loads(Path(f).read_text(encoding="utf-8")) for f in args.files]
+        frontier = frontier_from_dicts(*payloads)
+        if args.clients:
+            keep = set(_csv(args.clients))
+            frontier.clients = [c for c in frontier.clients if c in keep]
+            frontier.cells = [c for c in frontier.cells if c.client in keep]
+            from .report.frontier import compute_points
+
+            frontier.points = compute_points(frontier)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            render_frontier_html(frontier, title=args.title, heading=args.title,
+                                 lede=args.lede or "", footnote=args.notes or ""),
+            encoding="utf-8",
+        )
+        print(f"report: {out}")
+        return 0
+
+    spec, path = load_benchmark(args.benchmark)
+    p = plan(spec)
+    print(p.describe(spec))
+    if args.bench_command == "plan":
+        return 0
+    if p.paid_trials and not args.yes:
+        print()
+        print("  This benchmark calls a paid model. Nothing has been spent.")
+        print("  Re-run with --yes to run it.")
+        return 0
+    print()
+    out = run_benchmark(
+        spec, path, out_root=Path(args.out),
+        progress=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+    print(f"  results: {out}")
+    return 0
+
+
 def _csv(value: str | None) -> list[str]:
     return [v.strip() for v in (value or "").split(",") if v.strip()]
 
@@ -735,6 +789,25 @@ def build_parser() -> argparse.ArgumentParser:
                                  "(on by default for non-deterministic clients)")
     p_frontier.add_argument("--json", action="store_true", help="machine-readable output")
     p_frontier.set_defaults(func=cmd_frontier)
+
+    p_bench = sub.add_parser("bench", help="saved benchmarks: ls, plan, run, report")
+    bench_sub = p_bench.add_subparsers(dest="bench_command", required=True)
+    bench_sub.add_parser("ls", help="list saved benchmarks with their size and estimated cost")
+    for name, text in (("plan", "show what a benchmark would run and cost; runs nothing"),
+                       ("run", "run a benchmark; asks for --yes before calling a paid model")):
+        b = bench_sub.add_parser(name, help=text)
+        b.add_argument("benchmark", help="name under benchmarks/, or a path to a YAML file")
+        if name == "run":
+            b.add_argument("--yes", action="store_true", help="allow calls to a paid model")
+            b.add_argument("--out", default="results", help="results root (default: results)")
+    b = bench_sub.add_parser("report", help="render saved frontier JSON as one HTML report")
+    b.add_argument("files", nargs="+", help="frontier.json files to merge")
+    b.add_argument("--out", required=True)
+    b.add_argument("--clients", default=None, help="comma-separated clients to keep")
+    b.add_argument("--title", default="interpose benchmark")
+    b.add_argument("--lede", default=None)
+    b.add_argument("--notes", default=None)
+    p_bench.set_defaults(func=cmd_bench)
 
     p_freeze = sub.add_parser(
         "freeze", help="record or verify the digests policies are frozen at"

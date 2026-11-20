@@ -134,7 +134,9 @@ the same. The interesting results are elsewhere:
   never stated. The model declined to invent one, and the fixture is now fixed.
 - **It refused a legitimate task for lack of information.** It wouldn't post a
   need-to-know note to a queue it *assumed* was widely read. The queue was
-  readable by exactly the right two people, and the policy knew that.
+  readable by exactly the right two people, and the policy knew that. The
+  agent now has `get_queue_readers` to find out for itself;
+  `interpose bench run queue-visibility` tests whether that fixes it.
 
 ## Two observers, built to fail differently
 
@@ -255,6 +257,8 @@ pip install -e .             # two runtime deps: pydantic, PyYAML
 interpose frontier           # every scenario x policy x client, ~3s, no key
 interpose frontier --html frontier.html   # the same, as a self-contained page
 interpose demo               # per-scenario tables with both observers
+interpose bench ls           # saved benchmarks, with their size and estimated cost
+interpose bench run scripted-frontier   # a saved sweep: manifest, report, every trial
 interpose run indirect-document-injection --policy reference
 interpose replay runs/<run-id>
 interpose matrix             # phrasing invariance, reported with its cost
@@ -268,6 +272,10 @@ credential; costs money, and the results are samples, not cells):
 interpose frontier indirect-document-injection --policies reference,context-taint \
     --clients compliant,anthropic:claude-opus-5-5@low --repeat 3
 ```
+
+Or run a saved benchmark. `interpose bench run real-model-pilot` prints the
+plan and an estimated cost, and spends nothing until you add `--yes`. Results
+go to `results/<benchmark>/<timestamp>/`, with each trial saved as it finishes.
 
 Start narrow like that. A full sweep is about 140 agent runs per sample per
 model, each several API calls long. The frontier prints the API calls and tokens

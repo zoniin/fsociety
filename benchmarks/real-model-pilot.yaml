@@ -1,0 +1,22 @@
+# The first real-model run, 2026-11-19, saved so it can be repeated.
+# Results of the original run: results/real-model-pilot/ and
+# docs/research/REAL_MODEL_PILOT.md. The scenarios have moved on since (v0.2.0
+# adds get_queue_readers and fixes two fixtures), so a re-run measures the
+# current corpus, not the pilot's. The manifest records which.
+name: real-model-pilot
+description: >
+  Claude Opus 5.5 at low effort against the three paraphrase-relevant policies
+  on every scenario, one sample per cell.
+scenarios: [confidential-egress, compartment-egress, indirect-document-injection]
+policies: [reference, context-taint, sink-scoped]
+clients: ["anthropic:claude-opus-5-5@low"]
+repeat: 1
+session: fresh
+cost:
+  # Mean over the 10 scorecards of the 2026-11-19 pilot.
+  measured_tokens_per_scorecard: {input: 30142, output: 3682}
+  price_per_mtok: {input: 4.0, output: 20.0}
+  source: results/real-model-pilot/ (2026-11-19, 10 scorecards)
+notes: >
+  One sample per cell is a pilot, not a rate. Requires ANTHROPIC_API_KEY and
+  pip install -e '.[anthropic]'.

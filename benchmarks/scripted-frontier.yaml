@@ -1,0 +1,8 @@
+name: scripted-frontier
+description: >
+  The deterministic headline sweep: every scenario and built-in policy under
+  the verbatim and paraphrasing scripted clients. Free, offline, about 4 seconds.
+scenarios: [confidential-egress, compartment-egress, indirect-document-injection]
+policies: [permissive, path-prefix, reference, context-taint, sink-scoped]
+clients: [compliant, paraphrasing]
+session: fresh
